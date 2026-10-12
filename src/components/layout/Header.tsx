@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Network, 
   Layers, 
@@ -11,14 +11,22 @@ import {
   BookOpen, 
   Search, 
   ChevronDown, 
+  ChevronRight,
+  CornerDownRight,
   Sparkles,
   Terminal,
   Mic,
   Lock,
   Building,
+  FolderTree,
   X
 } from 'lucide-react';
 import { Tenant, User } from '../../types';
+
+interface TenantTreeNode {
+  tenant: Tenant;
+  children: TenantTreeNode[];
+}
 
 export type NavTabId = 
   | 'visualizer' 
@@ -60,17 +68,74 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [showTenantDropdown, setShowTenantDropdown] = useState<boolean>(false);
   const [tenantSearchQuery, setTenantSearchQuery] = useState<string>('');
+  const [expandedTenantIds, setExpandedTenantIds] = useState<Set<string>>(() => new Set(['tenant_acme', 'tenant_betalabs']));
 
-  const filteredTenants = tenants.filter((t) => {
-    if (!tenantSearchQuery.trim()) return true;
-    const query = tenantSearchQuery.toLowerCase();
-    return (
-      t.name.toLowerCase().includes(query) ||
-      t.schema.toLowerCase().includes(query) ||
-      t.visibility.toLowerCase().includes(query) ||
-      (t.tags && t.tags.some((tag) => tag.toLowerCase().includes(query)))
-    );
-  });
+  const toggleExpand = (tenantId: string) => {
+    setExpandedTenantIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(tenantId)) {
+        next.delete(tenantId);
+      } else {
+        next.add(tenantId);
+      }
+      return next;
+    });
+  };
+
+  // Build hierarchical tree grouping parent and child tenants
+  const hierarchicalRoots = useMemo(() => {
+    const query = tenantSearchQuery.trim().toLowerCase();
+
+    // Map all tenants into node structures
+    const nodeMap = new Map<string, TenantTreeNode>();
+    tenants.forEach((t) => {
+      nodeMap.set(t.id, { tenant: t, children: [] });
+    });
+
+    const roots: TenantTreeNode[] = [];
+
+    // Establish parent/child links
+    tenants.forEach((t) => {
+      const node = nodeMap.get(t.id)!;
+      if (t.parentTenantId && nodeMap.has(t.parentTenantId)) {
+        nodeMap.get(t.parentTenantId)!.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    });
+
+    // If no query, return full hierarchy tree
+    if (!query) {
+      return roots;
+    }
+
+    // Filter tree matching query: include root if root matches OR if any of its children match
+    const filterNode = (node: TenantTreeNode): TenantTreeNode | null => {
+      const matchesSelf =
+        node.tenant.name.toLowerCase().includes(query) ||
+        node.tenant.schema.toLowerCase().includes(query) ||
+        node.tenant.visibility.toLowerCase().includes(query) ||
+        (node.tenant.tags && node.tenant.tags.some((tag) => tag.toLowerCase().includes(query)));
+
+      const matchingChildren: TenantTreeNode[] = [];
+      for (const child of node.children) {
+        const filteredChild = filterNode(child);
+        if (filteredChild) matchingChildren.push(filteredChild);
+      }
+
+      if (matchesSelf || matchingChildren.length > 0) {
+        return {
+          tenant: node.tenant,
+          children: matchingChildren,
+        };
+      }
+      return null;
+    };
+
+    return roots
+      .map((r) => filterNode(r))
+      .filter((r): r is TenantTreeNode => r !== null);
+  }, [tenants, tenantSearchQuery]);
 
   const tabs: { id: NavTabId; label: string; icon: React.ReactNode }[] = [
     { id: 'visualizer', label: 'Визуализатор', icon: <Network className="w-3.5 h-3.5" /> },
@@ -140,12 +205,29 @@ export const Header: React.FC<HeaderProps> = ({
                   <div className="absolute left-0 mt-1.5 w-80 bg-neutral-900/95 backdrop-blur-md border border-neutral-800 rounded-xl shadow-2xl p-2 z-50 text-xs flex flex-col">
                     <div className="text-[10px] font-mono uppercase text-neutral-400 px-2 py-1 flex items-center justify-between border-b border-neutral-800/80 mb-2">
                       <span className="flex items-center gap-1.5 font-semibold text-neutral-300">
-                        <Building className="w-3 h-3 text-cyan-400" />
-                        Рабочий тенант
+                        <FolderTree className="w-3.5 h-3.5 text-cyan-400" />
+                        Дерево тенантов
                       </span>
-                      <span className="text-cyan-400 font-mono font-medium">
-                        {tenants.length} тенантов
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (expandedTenantIds.size > 0) {
+                              setExpandedTenantIds(new Set());
+                            } else {
+                              setExpandedTenantIds(new Set(tenants.map((t) => t.id)));
+                            }
+                          }}
+                          className="text-[10px] text-cyan-400 hover:text-cyan-300 hover:underline transition-colors lowercase"
+                          title="Развернуть/свернуть все уровни"
+                        >
+                          {expandedTenantIds.size > 0 ? 'свернуть все' : 'развернуть все'}
+                        </button>
+                        <span className="text-neutral-500">·</span>
+                        <span className="text-neutral-400 font-mono">
+                          {tenants.length}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Search bar inside dropdown when list exceeds 5 entries */}
@@ -175,46 +257,135 @@ export const Header: React.FC<HeaderProps> = ({
                       </div>
                     )}
 
-                    {/* Tenants list */}
-                    <div className="max-h-60 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                      {filteredTenants.length === 0 ? (
+                    {/* Tenants hierarchical tree view */}
+                    <div className="max-h-72 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                      {hierarchicalRoots.length === 0 ? (
                         <div className="py-6 text-center text-neutral-500 text-xs font-mono">
                           Тенанты не найдены по запросу «{tenantSearchQuery}»
                         </div>
                       ) : (
-                        filteredTenants.map((t) => (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => {
-                              onSelectTenant(t);
-                              setShowTenantDropdown(false);
-                              setTenantSearchQuery('');
-                            }}
-                            className={`w-full text-left p-2 rounded-lg flex items-center justify-between transition-colors ${
-                              t.id === activeTenant.id
-                                ? 'bg-cyan-950/40 border border-cyan-800/60 text-white font-semibold'
-                                : 'text-neutral-300 hover:bg-neutral-800/80 border border-transparent'
-                            }`}
-                          >
-                            <div className="min-w-0 flex-1 mr-2">
-                              <div className="flex items-center gap-1.5">
-                                <span className="truncate">{t.name}</span>
-                                {t.id === activeTenant.id && (
-                                  <span className="text-[9px] px-1.5 py-0.2 bg-cyan-500/20 text-cyan-300 rounded font-mono font-medium">
-                                    АКТИВЕН
-                                  </span>
+                        hierarchicalRoots.map((rootNode) => {
+                          const hasChildren = rootNode.children.length > 0;
+                          const isExpanded = expandedTenantIds.has(rootNode.tenant.id);
+                          const isActive = rootNode.tenant.id === activeTenant.id;
+                          const hasActiveChild = rootNode.children.some((c) => c.tenant.id === activeTenant.id);
+
+                          return (
+                            <div key={rootNode.tenant.id} className="space-y-1">
+                              {/* Parent / Root Tenant Card */}
+                              <div
+                                className={`group/item w-full text-left p-2 rounded-lg flex items-center justify-between transition-all ${
+                                  isActive
+                                    ? 'bg-cyan-950/50 border border-cyan-800/70 text-white font-semibold shadow-xs'
+                                    : hasActiveChild
+                                    ? 'bg-neutral-850/80 border border-neutral-750 text-neutral-200'
+                                    : 'text-neutral-300 hover:bg-neutral-800/80 border border-transparent'
+                                }`}
+                              >
+                                {hasChildren && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleExpand(rootNode.tenant.id);
+                                    }}
+                                    className="p-1 -ml-1 mr-1 text-neutral-400 hover:text-white rounded hover:bg-neutral-700/50 transition-colors"
+                                    title={isExpanded ? 'Свернуть подразделы' : 'Развернуть подразделы'}
+                                  >
+                                    <ChevronRight
+                                      className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                                        isExpanded ? 'rotate-90 text-cyan-400' : ''
+                                      }`}
+                                    />
+                                  </button>
                                 )}
+
+                                <div
+                                  className="min-w-0 flex-1 mr-2 cursor-pointer"
+                                  onClick={() => {
+                                    onSelectTenant(rootNode.tenant);
+                                    setShowTenantDropdown(false);
+                                    setTenantSearchQuery('');
+                                  }}
+                                >
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="truncate font-medium">{rootNode.tenant.name}</span>
+                                    {rootNode.tenant.tier === 'holding' && (
+                                      <span className="text-[9px] px-1.5 py-0.2 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded font-mono font-medium">
+                                        ХОЛДИНГ
+                                      </span>
+                                    )}
+                                    {isActive && (
+                                      <span className="text-[9px] px-1.5 py-0.2 bg-cyan-500/20 text-cyan-300 rounded font-mono font-medium">
+                                        АКТИВЕН
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-neutral-500 font-mono truncate">
+                                    {rootNode.tenant.schema} · {rootNode.tenant.visibility} · {rootNode.tenant.memberCount} уч.
+                                    {hasChildren && ` · ${rootNode.children.length} дочерних`}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {isActive && (
+                                    <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400" />
+                                  )}
+                                </div>
                               </div>
-                              <div className="text-[10px] text-neutral-500 font-mono truncate">
-                                {t.schema} · {t.visibility} · {t.memberCount} участников
-                              </div>
+
+                              {/* Nested Children Tree */}
+                              {hasChildren && isExpanded && (
+                                <div className="ml-4 pl-3 border-l-2 border-cyan-900/40 space-y-1 py-0.5 relative">
+                                  {rootNode.children.map((childNode, idx) => {
+                                    const isChildActive = childNode.tenant.id === activeTenant.id;
+                                    return (
+                                      <div
+                                        key={childNode.tenant.id}
+                                        onClick={() => {
+                                          onSelectTenant(childNode.tenant);
+                                          setShowTenantDropdown(false);
+                                          setTenantSearchQuery('');
+                                        }}
+                                        className={`group/child w-full text-left p-1.5 rounded-lg flex items-center justify-between cursor-pointer transition-colors relative ${
+                                          isChildActive
+                                            ? 'bg-cyan-950/45 border border-cyan-800/60 text-white font-semibold'
+                                            : 'text-neutral-300 hover:bg-neutral-800/70 border border-transparent'
+                                        }`}
+                                      >
+                                        {/* Tree connector branch glyph */}
+                                        <div className="min-w-0 flex-1 mr-2 flex items-start gap-1.5">
+                                          <CornerDownRight className="w-3.5 h-3.5 text-neutral-600 group-hover/child:text-cyan-400 mt-0.5 shrink-0" />
+                                          <div className="min-w-0">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <span className="truncate">{childNode.tenant.name}</span>
+                                              {childNode.tenant.tier === 'division' && (
+                                                <span className="text-[8px] px-1 py-0.2 bg-neutral-800 text-neutral-400 border border-neutral-700 rounded font-mono">
+                                                  ДИВИЗИОН
+                                                </span>
+                                              )}
+                                              {isChildActive && (
+                                                <span className="text-[8px] px-1.5 py-0.2 bg-cyan-500/20 text-cyan-300 rounded font-mono font-medium">
+                                                  АКТИВЕН
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="text-[10px] text-neutral-500 font-mono truncate">
+                                              {childNode.tenant.schema} · {childNode.tenant.visibility} · {childNode.tenant.memberCount} уч.
+                                            </div>
+                                          </div>
+                                        </div>
+                                        {isChildActive && (
+                                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400 shrink-0" />
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
-                            {t.id === activeTenant.id && (
-                              <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400 shrink-0" />
-                            )}
-                          </button>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </div>

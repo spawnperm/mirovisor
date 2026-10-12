@@ -63,6 +63,8 @@ export interface Tenant {
   storageUsedMb: number;
   createdAt: string;
   tags: string[];
+  parentTenantId?: string; // ID родительского тенанта (для иерархии холдинга/суб-тенантов)
+  tier?: 'holding' | 'division' | 'project' | 'sandbox';
   config?: TenantConfiguration;
 }
 
