@@ -17,6 +17,9 @@ import {
   Zap
 } from 'lucide-react';
 import { Tenant, KanbanCard, SecurityFinding } from '../../types';
+import { ActiveVoiceSession } from '../devtools/ActiveVoiceSession';
+import { ConversationTurn } from '../devtools/VoiceControlModal';
+import { VoiceMacro } from '../../types/macros';
 
 interface MultidimensionalVisualizerProps {
   tenants: Tenant[];
@@ -24,6 +27,12 @@ interface MultidimensionalVisualizerProps {
   cards: KanbanCard[];
   securityFindings: SecurityFinding[];
   onSelectEntity?: (type: string, id: string) => void;
+  voiceMemory?: ConversationTurn[];
+  macros?: VoiceMacro[];
+  onOpenVoice?: () => void;
+  onOpenMacroRegistry?: () => void;
+  onExecuteVoiceCommand?: (commandText: string) => void;
+  onExecuteMacro?: (macro: VoiceMacro) => void;
 }
 
 type DimensionMode = 'topology' | 'tenants_cluster' | 'agent_flow' | 'security_matrix';
@@ -53,6 +62,12 @@ export const MultidimensionalDataVisualizer: React.FC<MultidimensionalVisualizer
   cards,
   securityFindings,
   onSelectEntity,
+  voiceMemory,
+  macros,
+  onOpenVoice,
+  onOpenMacroRegistry,
+  onExecuteVoiceCommand,
+  onExecuteMacro,
 }) => {
   const [dimension, setDimension] = useState<DimensionMode>('topology');
   const [zoom, setZoom] = useState<number>(1);
@@ -138,7 +153,7 @@ export const MultidimensionalDataVisualizer: React.FC<MultidimensionalVisualizer
   };
 
   return (
-    <div className="flex flex-col h-full bg-neutral-950 border border-neutral-800 rounded-xl overflow-hidden shadow-2xl">
+    <div className="flex flex-col h-full bg-neutral-950 border border-neutral-800 rounded-xl overflow-hidden shadow-2xl relative">
       {/* Top Controller Bar */}
       <div className="flex flex-wrap items-center justify-between p-3 bg-neutral-900/90 border-b border-neutral-800 gap-3">
         <div className="flex items-center gap-2">
@@ -634,6 +649,21 @@ export const MultidimensionalDataVisualizer: React.FC<MultidimensionalVisualizer
               Закрыть
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Persistent AI Dashboard Presence: ActiveVoiceSession Widget */}
+      {voiceMemory && (
+        <div className="absolute bottom-4 right-4 z-30 w-80 sm:w-96 max-w-[calc(100vw-2rem)] pointer-events-auto">
+          <ActiveVoiceSession
+            turns={voiceMemory}
+            activeTenant={activeTenant}
+            macros={macros || []}
+            onOpenVoice={onOpenVoice || (() => {})}
+            onOpenMacroRegistry={onOpenMacroRegistry || (() => {})}
+            onExecuteVoiceCommand={onExecuteVoiceCommand || (() => {})}
+            onExecuteMacro={onExecuteMacro}
+          />
         </div>
       )}
     </div>

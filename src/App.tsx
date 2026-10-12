@@ -22,6 +22,9 @@ import { LlmWikiView } from './components/wiki/LlmWikiView';
 import { UniversalSearchModal } from './components/search/UniversalSearchModal';
 import { PortalTerminalDrawer } from './components/devtools/PortalTerminalDrawer';
 import { VoiceControlModal, VoiceActionResult, ConversationTurn } from './components/devtools/VoiceControlModal';
+import { MacroRegistryModal } from './components/devtools/MacroRegistryModal';
+import { VoiceMacro } from './types/macros';
+import { DEFAULT_VOICE_MACROS } from './data/defaultMacros';
 
 import {
   INITIAL_TENANTS,
@@ -104,6 +107,37 @@ export default function App() {
     }
     AiAgentService.getInstance().syncVoiceConversationHistory(voiceMemory);
   }, [voiceMemory]);
+
+  const [isMacroRegistryOpen, setIsMacroRegistryOpen] = useState<boolean>(false);
+
+  // Macro Registry: persistent voice macro definitions stored in localStorage
+  const [macros, setMacros] = useState<VoiceMacro[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('mirovisor_voice_macros');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load voice macros from localStorage:', err);
+      }
+    }
+    return DEFAULT_VOICE_MACROS;
+  });
+
+  // Sync macros with localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('mirovisor_voice_macros', JSON.stringify(macros));
+      } catch (err) {
+        console.warn('Failed to save voice macros to localStorage:', err);
+      }
+    }
+  }, [macros]);
 
   // Global Hotkey handlers (Ctrl+V for voice, Cmd+K for search)
   useEffect(() => {
@@ -450,6 +484,117 @@ export default function App() {
     );
     const lastEntityTurn = priorEntityTurns.length > 0 ? priorEntityTurns[priorEntityTurns.length - 1] : null;
 
+    // =========================================================================
+    // 0. MACRO REGISTRY: Check if spoken phrase triggers a registered macro
+    // =========================================================================
+    const matchedMacro = macros.find((m) => {
+      const kw = m.keyword.toLowerCase().trim();
+      if (text.includes(kw) || kw.includes(text)) return true;
+      if (kw === 'deploy nightly') {
+        return text.includes('ночной деплой') || text.includes('деплой найтли') || text.includes('ночная сборка');
+      }
+      if (kw === 'full system audit') {
+        return text.includes('полный аудит') || text.includes('глубокий аудит');
+      }
+      if (kw === 'scaffold plugin') {
+        return text.includes('создай и анонсируй') || text.includes('новый плагин в ленту');
+      }
+      return false;
+    });
+
+    if (matchedMacro) {
+      const executedSteps: string[] = [];
+
+      matchedMacro.actions.forEach((act) => {
+        if (act.type === 'trigger_build') {
+          handleTriggerBuild(act.target || 'main');
+          executedSteps.push('Запущен CI/CD пайплайн сборки ветки main');
+        } else if (act.type === 'security_audit') {
+          const auditFinding: SecurityFinding = {
+            id: `sec_macro_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            scanner: 'CodeQL',
+            severity: 'HIGH',
+            title: `Макрос «${matchedMacro.keyword}»: Проверка безопасности RLS & ASVS L2`,
+            fileOrUrl: `libs/core/src/tenant/${activeTenant.slug}/rls.guard.ts`,
+            description: `Комплексная проверка в схеме ${activeTenant.schema} подтвердила строгое действие политики RLS FORCE и отсутствие перекрестной утечки данных.`,
+            cwe: 'CWE-284 (Improper Access Control)',
+            status: 'open',
+            detectedAt: new Date().toISOString(),
+            remediationExplanation: 'Изоляция PostgreSQL активна на уровне ядра базы данных.',
+            remediationSnippet: `ALTER TABLE tenant_data FORCE ROW LEVEL SECURITY;\n-- Macro-verified for ${activeTenant.schema}`,
+          };
+          setSecurityFindings((prev) => [auditFinding, ...prev]);
+          executedSteps.push('Проведен аудит безопасности и проверена изоляция RLS');
+        } else if (act.type === 'post_social') {
+          const releasePost: SocialPost = {
+            id: `post_macro_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            authorId: currentUser.id,
+            authorName: currentUser.fullName,
+            authorAvatar: currentUser.avatarUrl,
+            tenantId: activeTenant.id,
+            tenantName: activeTenant.name,
+            content: `🚀 [Voice Macro: «${matchedMacro.keyword}»] Запущен ночной цикл сборки и комплексного аудита. Проверки CodeQL SAST, RLS-изоляция схемы ${activeTenant.schema} и авто-тесты успешно верифицированы. Релиз готов!`,
+            tags: ['#macro', '#deploy', '#nightly', '#security', '#rls', '#ci-cd'],
+            likes: 5,
+            commentsCount: 2,
+            timestamp: 'Только что (Голосовой макрос)',
+          };
+          setPosts((prev) => [releasePost, ...prev]);
+          executedSteps.push('Сводка релиза опубликована в Community Feed');
+        } else if (act.type === 'scaffold_plugin') {
+          const pluginId = `plugin-macro-${Date.now().toString().slice(-4)}`;
+          const manifest: PluginManifest = {
+            id: pluginId,
+            name: `Widget ${matchedMacro.keyword}`,
+            version: '1.0.0',
+            description: `Микрофронтенд-виджет, созданный макросом «${matchedMacro.keyword}».`,
+            author: currentUser.fullName,
+            license: 'MIT',
+            dependencies: [],
+            conflicts: [],
+            permissions: ['audit.codebase.read'],
+            category: 'devtools',
+            priceRub: 0,
+            installedInTenants: [activeTenant.id],
+            status: 'active',
+          };
+          setPlugins((prev) => [manifest, ...prev]);
+          executedSteps.push(`Создан микрофронтенд-плагин [${pluginId}]`);
+        } else if (act.type === 'navigate_tab') {
+          const targetTab = (act.target as NavTabId) || 'pipelines';
+          setActiveTab(targetTab);
+          executedSteps.push(`Переход на экран «${targetTab}»`);
+        } else if (act.type === 'rollback_code') {
+          const implemented = cards.find((c) => c.column === 'collected' && !c.rolledBack);
+          if (implemented) {
+            handleRollbackCard(implemented.id, `Макрос ${matchedMacro.keyword}`);
+            executedSteps.push(`Выполнен откат изменения [${implemented.id}]`);
+          }
+        }
+      });
+
+      // Increment execution count on macro
+      setMacros((prev) =>
+        prev.map((m) =>
+          m.id === matchedMacro.id
+            ? { ...m, executionCount: (m.executionCount || 0) + 1, lastRunAt: new Date().toISOString() }
+            : m
+        )
+      );
+
+      return {
+        intent: `macro_${matchedMacro.id}`,
+        responseSpeech: `Исполнен голосовой макрос «${matchedMacro.name}» с ключевым словом «${matchedMacro.keyword}». Запущена CI/CD сборка, проведен аудит безопасности RLS и опубликована сводка в Community Feed!`,
+        details: `Макрос выполнил ${matchedMacro.actions.length} действий: ${executedSteps.join(' → ')}.`,
+        affectedEntity: matchedMacro.keyword,
+        metadata: {
+          macroId: matchedMacro.id,
+          keyword: matchedMacro.keyword,
+          steps: executedSteps,
+        },
+      };
+    }
+
     // A. Memory Context Inquiry: "Что мы сделали только что?" / "Какая была прошлая команда?"
     if (
       text.includes('что мы') ||
@@ -724,6 +869,30 @@ export const VoiceWidget = createComponentExtension({
     };
   };
 
+  // Direct macro executor invoked from UI buttons or Macro Registry modal
+  const handleExecuteMacro = (macro: VoiceMacro) => {
+    const result = handleExecuteVoiceCommand(macro.keyword, voiceMemory);
+
+    const userTurn: ConversationTurn = {
+      id: `vt_${Date.now()}_u`,
+      timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      role: 'user',
+      text: `Запуск макроса: «${macro.keyword}»`,
+    };
+
+    const agentTurn: ConversationTurn = {
+      id: `vt_${Date.now()}_a`,
+      timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      role: 'agent',
+      text: result?.responseSpeech || `Макрос «${macro.name}» успешно выполнен.`,
+      actionResult: result?.details || 'Цепочка действий макроса завершена',
+      intent: `macro_${macro.id}`,
+      affectedEntity: macro.keyword,
+    };
+
+    setVoiceMemory((prev) => [...prev, userTurn, agentTurn]);
+  };
+
   const inProgressCardsCount = cards.filter((c) => c.column === 'in_progress').length;
 
   return (
@@ -749,6 +918,12 @@ export const VoiceWidget = createComponentExtension({
             activeTenant={activeTenant}
             cards={cards}
             securityFindings={securityFindings}
+            voiceMemory={voiceMemory}
+            macros={macros}
+            onOpenVoice={() => setIsVoiceOpen(true)}
+            onOpenMacroRegistry={() => setIsMacroRegistryOpen(true)}
+            onExecuteVoiceCommand={handleExecuteVoiceCommand}
+            onExecuteMacro={handleExecuteMacro}
             onSelectEntity={(type, id) => {
               if (type === 'tenant') {
                 const found = tenants.find((t) => t.id === id);
@@ -922,6 +1097,8 @@ export const VoiceWidget = createComponentExtension({
         onExecuteVoiceCommand={handleExecuteVoiceCommand}
         conversationMemory={voiceMemory}
         onUpdateConversationMemory={setVoiceMemory}
+        macros={macros}
+        onOpenMacroRegistry={() => setIsMacroRegistryOpen(true)}
         onClearMemory={() => {
           setVoiceMemory([]);
           try {
@@ -930,6 +1107,20 @@ export const VoiceWidget = createComponentExtension({
             // ignore
           }
         }}
+      />
+
+      {/* Voice Macro Registry Modal */}
+      <MacroRegistryModal
+        isOpen={isMacroRegistryOpen}
+        onClose={() => setIsMacroRegistryOpen(false)}
+        macros={macros}
+        onSaveMacro={(newMacro) => {
+          setMacros((prev) => [newMacro, ...prev]);
+        }}
+        onDeleteMacro={(macroId) => {
+          setMacros((prev) => prev.filter((m) => m.id !== macroId));
+        }}
+        onExecuteMacro={handleExecuteMacro}
       />
     </div>
   );

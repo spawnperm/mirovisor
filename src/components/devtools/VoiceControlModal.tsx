@@ -20,9 +20,11 @@ import {
   History,
   Activity,
   ArrowRight,
-  Database
+  Database,
+  Sliders
 } from 'lucide-react';
 import { Tenant } from '../../types';
+import { VoiceMacro } from '../../types/macros';
 import { AiAgentService } from '../../services/aiAgentService';
 import { VoiceInteractionLog } from './VoiceInteractionLog';
 
@@ -59,6 +61,8 @@ interface VoiceControlModalProps {
   conversationMemory?: ConversationTurn[];
   onUpdateConversationMemory?: React.Dispatch<React.SetStateAction<ConversationTurn[]>> | ((updater: ConversationTurn[] | ((prev: ConversationTurn[]) => ConversationTurn[])) => void);
   onClearMemory?: () => void;
+  macros?: VoiceMacro[];
+  onOpenMacroRegistry?: () => void;
 }
 
 export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
@@ -69,6 +73,8 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
   conversationMemory: externalConversationMemory,
   onUpdateConversationMemory,
   onClearMemory,
+  macros,
+  onOpenMacroRegistry,
 }) => {
   const [isListening, setIsListening] = useState<boolean>(true);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
@@ -430,8 +436,14 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
     .reverse()
     .find((t) => t.role === 'user');
 
-  // Interactive Programming Scenarios (including context referencing intents)
+  // Interactive Programming Scenarios (including context referencing intents and macros)
   const programmingVoiceCommands = [
+    {
+      category: 'Голосовые макросы',
+      cmd: 'Deploy Nightly',
+      icon: Zap,
+      color: 'text-amber-400',
+    },
     {
       category: 'Контекст & Память',
       cmd: 'Что мы сделали только что в предыдущей команде?',
@@ -524,6 +536,15 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5">
+            {onOpenMacroRegistry && (
+              <button
+                onClick={onOpenMacroRegistry}
+                className="p-1.5 rounded-lg border border-neutral-800 text-neutral-400 hover:text-amber-300 hover:bg-neutral-800 transition-colors"
+                title="Реестр макросов (Macro Registry)"
+              >
+                <Sliders className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={() => setSoundEnabled(!soundEnabled)}
               className={`p-1.5 rounded-lg border text-xs transition-colors ${soundEnabled ? 'border-neutral-700 text-cyan-400 hover:bg-neutral-800' : 'border-neutral-800 text-neutral-500 hover:bg-neutral-800'}`}
