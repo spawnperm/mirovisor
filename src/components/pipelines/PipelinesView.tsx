@@ -18,10 +18,12 @@ import {
   FileCode,
   Key,
   Globe,
-  Package
+  Package,
+  BarChart2,
 } from 'lucide-react';
 import { PipelineBuild, PipelineStep, SecurityFinding, Tenant, KanbanCard } from '../../types';
 import { AiAgentService } from '../../services/aiAgentService';
+import { BuildPerformanceDashboard } from './BuildPerformanceDashboard';
 
 interface PipelinesViewProps {
   builds: PipelineBuild[];
@@ -45,6 +47,7 @@ export const PipelinesView: React.FC<PipelinesViewProps> = ({
   const [isTriggering, setIsTriggering] = useState<boolean>(false);
   const [targetBranch, setTargetBranch] = useState<string>('main');
   const [natsNotification, setNatsNotification] = useState<string | null>(null);
+  const [activeViewMode, setActiveViewMode] = useState<'feed' | 'performance'>('feed');
 
   const handleRunBuild = () => {
     setIsTriggering(true);
@@ -89,6 +92,28 @@ export const PipelinesView: React.FC<PipelinesViewProps> = ({
           </div>
         </div>
 
+        {/* View Mode Switcher */}
+        <div className="flex bg-neutral-950 p-1 rounded-lg border border-neutral-800 text-xs">
+          <button
+            onClick={() => setActiveViewMode('feed')}
+            className={`px-3 py-1 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
+              activeViewMode === 'feed' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <GitBranch className="w-3.5 h-3.5 text-cyan-400" />
+            Сборки & Логи
+          </button>
+          <button
+            onClick={() => setActiveViewMode('performance')}
+            className={`px-3 py-1 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
+              activeViewMode === 'performance' ? 'bg-cyan-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <BarChart2 className="w-3.5 h-3.5" />
+            Build Performance Dashboard
+          </button>
+        </div>
+
         {/* NATS JetStream Status Banner */}
         {natsNotification && (
           <div className="text-xs font-mono text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 px-3 py-1.5 rounded-lg animate-pulse">
@@ -128,8 +153,11 @@ export const PipelinesView: React.FC<PipelinesViewProps> = ({
         </div>
       </div>
 
-      {/* Main Grid: Left Builds List / Middle Step Details & Logs / Right Security Gate Findings */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 overflow-hidden">
+      {activeViewMode === 'performance' ? (
+        <BuildPerformanceDashboard builds={builds} activeTenant={activeTenant} />
+      ) : (
+        /* Main Grid: Left Builds List / Middle Step Details & Logs / Right Security Gate Findings */
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 overflow-hidden">
         {/* Left: Builds List (3 cols) */}
         <div className="lg:col-span-3 bg-neutral-900/60 border border-neutral-800 rounded-xl p-3 flex flex-col gap-2 overflow-hidden">
           <span className="text-[10px] font-mono uppercase text-neutral-500 font-bold px-1">
@@ -401,6 +429,7 @@ export const PipelinesView: React.FC<PipelinesViewProps> = ({
           )}
         </div>
       </div>
+      )}
     </div>
   );
 };

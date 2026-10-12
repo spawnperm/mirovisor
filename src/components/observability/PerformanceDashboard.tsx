@@ -38,6 +38,7 @@ import {
 import { Tenant } from '../../types';
 import { usePerformanceMonitoring, moduleRenderTimes, recordModuleRenderTime } from '../../hooks/usePerformanceMonitoring';
 import { LogUtility } from '../../services/logUtility';
+import { useLazyLoadTimings } from '../../utils/lazyComponentTracker';
 
 interface PerformanceDashboardProps {
   tenant: Tenant;
@@ -59,6 +60,7 @@ interface LatencyDataPoint {
 
 export const PerformanceDashboard: React.FC<PerformanceDashboardProps> = ({ tenant }) => {
   const { vitals } = usePerformanceMonitoring();
+  const lazyRecords = useLazyLoadTimings();
   const [isBenchmarking, setIsBenchmarking] = useState<boolean>(false);
   const [renderData, setRenderData] = useState<Array<{ name: string; timeMs: number }>>(() =>
     Object.entries(moduleRenderTimes).map(([name, timeMs]) => ({ name, timeMs }))
@@ -378,6 +380,64 @@ export const PerformanceDashboard: React.FC<PerformanceDashboardProps> = ({ tena
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* 4. Lazy-Loaded Component Load Time Tracking (performance.now() & requestIdleCallback) */}
+      <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-cyan-400" />
+            <h3 className="text-xs font-bold text-white font-mono uppercase tracking-wider">
+              Телеметрия Загрузки Lazy-Loaded Модулей (performance.now() & requestIdleCallback)
+            </h3>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] font-mono text-neutral-400">
+            <span className="px-2 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/40 text-cyan-300">
+              requestIdleCallback Dispatcher
+            </span>
+            <span>Всего модулей: {lazyRecords.length}</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {lazyRecords.map((item) => (
+            <div
+              key={item.name}
+              className="bg-neutral-950/80 border border-neutral-800/70 rounded-xl p-3 flex flex-col justify-between hover:border-neutral-700 transition-colors"
+            >
+              <div className="flex items-center justify-between gap-1 mb-2">
+                <span className="text-xs font-semibold text-neutral-200 truncate" title={item.name}>
+                  {item.name}
+                </span>
+                <span
+                  className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold ${
+                    item.status === 'loaded'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : item.status === 'loading'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
+                      : 'bg-neutral-800 text-neutral-400'
+                  }`}
+                >
+                  {item.status}
+                </span>
+              </div>
+              <div className="flex items-end justify-between text-xs">
+                <div>
+                  <div className="text-neutral-500 text-[10px]">Загрузка чанка:</div>
+                  <div className="font-mono font-bold text-cyan-300">
+                    {item.durationMs > 0 ? `${item.durationMs} ms` : 'Ожидание'}
+                  </div>
+                </div>
+                <div className="text-[10px] font-mono text-neutral-500 text-right">
+                  <div>{item.timestamp}</div>
+                  {item.idleScheduled && (
+                    <div className="text-emerald-400/80 text-[9px]">idleCallback ✓</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

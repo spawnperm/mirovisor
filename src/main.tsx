@@ -18,3 +18,18 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </QueryClientProvider>
 );
+
+// Register Service Worker for offline asset caching and API response persistence
+if ('serviceWorker' in navigator && process.env.NODE_ENV !== 'test') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((registration) => {
+        console.info('[Mirovisor SW] Registered successfully with scope:', registration.scope);
+      })
+      .catch((error) => {
+        console.warn('[Mirovisor SW] Registration failed:', error);
+      });
+  });
+}
+

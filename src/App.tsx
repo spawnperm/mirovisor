@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { lazy, Suspense, useEffect, useCallback } from 'react';
+import React, { lazy, Suspense, useEffect, useCallback, useState } from 'react';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
@@ -17,6 +17,8 @@ import { ToastContainer } from './components/common/ToastContainer';
 import { useProductTelemetry } from './hooks/useProductTelemetry';
 import { usePerformanceMonitoring } from './hooks/usePerformanceMonitoring';
 import { LogUtility } from './services/logUtility';
+import { OfflineStorage } from './services/offlineStorageService';
+import { trackLazyComponent } from './utils/lazyComponentTracker';
 import {
   useNavigationSlice,
   useA11ySlice,
@@ -36,81 +38,114 @@ import { useTenantsQuery, useTenantMetricsQuery, useKanbanCardsQuery } from './q
 
 // =============================================================================
 // React.lazy() dynamic code-splitting for all 15 modular enterprise screens + Dashboard
+// Tracked with performance.now() and requestIdleCallback
 // =============================================================================
-const DashboardOverview = lazy(() =>
-  import('./components/dashboard/DashboardOverview').then((m) => ({ default: m.DashboardOverview }))
+const DashboardOverview = lazy(
+  trackLazyComponent('Дашборд (Overview)', () =>
+    import('./components/dashboard/DashboardOverview').then((m) => ({ default: m.DashboardOverview }))
+  )
 );
 
-const EngineeringAuditView = lazy(() =>
-  import('./components/audit/EngineeringAuditView').then((m) => ({ default: m.EngineeringAuditView }))
+const EngineeringAuditView = lazy(
+  trackLazyComponent('Аудит & Модернизация', () =>
+    import('./components/audit/EngineeringAuditView').then((m) => ({ default: m.EngineeringAuditView }))
+  )
 );
 
-const MultidimensionalDataVisualizer = lazy(() =>
-  import('./components/visualization/MultidimensionalDataVisualizer').then((m) => ({
-    default: m.MultidimensionalDataVisualizer,
-  }))
+const MultidimensionalDataVisualizer = lazy(
+  trackLazyComponent('D3 Визуализатор', () =>
+    import('./components/visualization/MultidimensionalDataVisualizer').then((m) => ({
+      default: m.MultidimensionalDataVisualizer,
+    }))
+  )
 );
 
-const PipelinesView = lazy(() =>
-  import('./components/pipelines/PipelinesView').then((m) => ({ default: m.PipelinesView }))
+const PipelinesView = lazy(
+  trackLazyComponent('CI/CD Пайплайны', () =>
+    import('./components/pipelines/PipelinesView').then((m) => ({ default: m.PipelinesView }))
+  )
 );
 
-const KanbanBoard = lazy(() =>
-  import('./components/kanban/KanbanBoard').then((m) => ({ default: m.KanbanBoard }))
+const KanbanBoard = lazy(
+  trackLazyComponent('Канбан Доска', () =>
+    import('./components/kanban/KanbanBoard').then((m) => ({ default: m.KanbanBoard }))
+  )
 );
 
-const TenantArchitectureView = lazy(() =>
-  import('./components/tenants/TenantArchitectureView').then((m) => ({
-    default: m.TenantArchitectureView,
-  }))
+const TenantArchitectureView = lazy(
+  trackLazyComponent('Архитектура Тенантов', () =>
+    import('./components/tenants/TenantArchitectureView').then((m) => ({
+      default: m.TenantArchitectureView,
+    }))
+  )
 );
 
-const PluginStudioView = lazy(() =>
-  import('./components/plugins/PluginStudioView').then((m) => ({ default: m.PluginStudioView }))
+const PluginStudioView = lazy(
+  trackLazyComponent('Backstage Студия', () =>
+    import('./components/plugins/PluginStudioView').then((m) => ({ default: m.PluginStudioView }))
+  )
 );
 
-const GauzyCrmView = lazy(() =>
-  import('./components/business/GauzyCrmView').then((m) => ({ default: m.GauzyCrmView }))
+const GauzyCrmView = lazy(
+  trackLazyComponent('Gauzy ERP/CRM', () =>
+    import('./components/business/GauzyCrmView').then((m) => ({ default: m.GauzyCrmView }))
+  )
 );
 
-const UniverOfficeView = lazy(() =>
-  import('./components/business/UniverOfficeView').then((m) => ({ default: m.UniverOfficeView }))
+const UniverOfficeView = lazy(
+  trackLazyComponent('Univer Office', () =>
+    import('./components/business/UniverOfficeView').then((m) => ({ default: m.UniverOfficeView }))
+  )
 );
 
-const PluginMarketplaceView = lazy(() =>
-  import('./components/plugins/PluginMarketplaceView').then((m) => ({
-    default: m.PluginMarketplaceView,
-  }))
+const PluginMarketplaceView = lazy(
+  trackLazyComponent('Каталог Плагинов', () =>
+    import('./components/plugins/PluginMarketplaceView').then((m) => ({
+      default: m.PluginMarketplaceView,
+    }))
+  )
 );
 
-const CommunityFeedView = lazy(() =>
-  import('./components/social/CommunityFeedView').then((m) => ({ default: m.CommunityFeedView }))
+const CommunityFeedView = lazy(
+  trackLazyComponent('Лента Сообщества', () =>
+    import('./components/social/CommunityFeedView').then((m) => ({ default: m.CommunityFeedView }))
+  )
 );
 
-const LmsCourseView = lazy(() =>
-  import('./components/lms/LmsCourseView').then((m) => ({ default: m.LmsCourseView }))
+const LmsCourseView = lazy(
+  trackLazyComponent('LMS Курсы', () =>
+    import('./components/lms/LmsCourseView').then((m) => ({ default: m.LmsCourseView }))
+  )
 );
 
-const SecurityCenterView = lazy(() =>
-  import('./components/security/SecurityCenterView').then((m) => ({
-    default: m.SecurityCenterView,
-  }))
+const SecurityCenterView = lazy(
+  trackLazyComponent('Security Center', () =>
+    import('./components/security/SecurityCenterView').then((m) => ({
+      default: m.SecurityCenterView,
+    }))
+  )
 );
 
-const ObservabilityView = lazy(() =>
-  import('./components/observability/ObservabilityView').then((m) => ({
-    default: m.ObservabilityView,
-  }))
+const ObservabilityView = lazy(
+  trackLazyComponent('Наблюдаемость (Observability)', () =>
+    import('./components/observability/ObservabilityView').then((m) => ({
+      default: m.ObservabilityView,
+    }))
+  )
 );
 
-const LlmWikiView = lazy(() =>
-  import('./components/wiki/LlmWikiView').then((m) => ({ default: m.LlmWikiView }))
+const LlmWikiView = lazy(
+  trackLazyComponent('LLM Wiki ADR', () =>
+    import('./components/wiki/LlmWikiView').then((m) => ({ default: m.LlmWikiView }))
+  )
 );
 
-const DevToolsSessionView = lazy(() =>
-  import('./components/devtools/DevToolsSessionView').then((m) => ({
-    default: m.DevToolsSessionView,
-  }))
+const DevToolsSessionView = lazy(
+  trackLazyComponent('DevTools & Голос', () =>
+    import('./components/devtools/DevToolsSessionView').then((m) => ({
+      default: m.DevToolsSessionView,
+    }))
+  )
 );
 
 export default function App() {
@@ -215,6 +250,36 @@ export default function App() {
     LogUtility.initGlobalHandlers();
   }, []);
 
+  const [isOffline, setIsOffline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+
+  // Sync critical state (tenants, cards, security findings) to IndexedDB cache
+  useEffect(() => {
+    if (tenants.length > 0 || cards.length > 0 || securityFindings.length > 0) {
+      OfflineStorage.saveAppStateSnapshot(tenants, cards, securityFindings);
+    }
+  }, [tenants, cards, securityFindings]);
+
+  // Network online/offline event listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      LogUtility.info('Сеть восстановлена. Онлайн режим активен.', {}, 'Network');
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      LogUtility.warn('Соединение потеряно. Активирован автономный режим IndexedDB.', {}, 'Network');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // Memoized modal toggle handlers
   const handleOpenSearch = useCallback(() => setSearchOpen(true), [setSearchOpen]);
   const handleCloseSearch = useCallback(() => setSearchOpen(false), [setSearchOpen]);
@@ -293,6 +358,22 @@ export default function App() {
           onOpenVoice={handleOpenVoice}
           onOpenA11y={handleOpenA11y}
         />
+
+        {/* Offline IndexedDB Status Banner */}
+        {isOffline && (
+          <div
+            role="status"
+            className="bg-amber-500/20 border-b border-amber-500/40 text-amber-300 px-4 py-1.5 text-xs flex items-center justify-between font-mono z-40"
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              <span>
+                <strong>Автономный режим (Offline):</strong> Отсутствует подключение к сети. Данные тенантов, карточек и безопасности доступны локально из IndexedDB.
+              </span>
+            </div>
+            <span className="text-[10px] text-amber-400/80 uppercase">idb offline storage active</span>
+          </div>
+        )}
 
         {/* Main View Area with React.lazy() & Suspense for all 15 screens */}
         <main id="main-content" tabIndex={-1} className="flex-1 overflow-hidden relative focus:outline-none">

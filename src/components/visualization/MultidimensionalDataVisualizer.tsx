@@ -22,6 +22,7 @@ import { ActiveVoiceSession } from '../devtools/ActiveVoiceSession';
 import { ConversationTurn } from '../devtools/VoiceControlModal';
 import { VoiceMacro } from '../../types/macros';
 import { D3ForceDirectedMesh } from './D3ForceDirectedMesh';
+import { ThreeDForceGraph } from './ThreeDForceGraph';
 
 interface MultidimensionalVisualizerProps {
   tenants: Tenant[];
@@ -38,7 +39,7 @@ interface MultidimensionalVisualizerProps {
   onExecuteMacro?: (macro: VoiceMacro) => void;
 }
 
-type DimensionMode = 'force_mesh' | 'topology' | 'tenants_cluster' | 'agent_flow' | 'security_matrix';
+type DimensionMode = 'force_mesh' | 'force_3d' | 'topology' | 'tenants_cluster' | 'agent_flow' | 'security_matrix';
 
 interface GraphNode {
   id: string;
@@ -193,6 +194,17 @@ export const MultidimensionalDataVisualizer: React.FC<MultidimensionalVisualizer
             D3.js Силовой граф
           </button>
           <button
+            onClick={() => setDimension('force_3d')}
+            className={`px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
+              dimension === 'force_3d'
+                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-sm font-semibold'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Boxes className="w-3.5 h-3.5 text-indigo-400" />
+            3D Граф инфраструктуры
+          </button>
+          <button
             onClick={() => setDimension('topology')}
             className={`px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
               dimension === 'topology'
@@ -310,6 +322,17 @@ export const MultidimensionalDataVisualizer: React.FC<MultidimensionalVisualizer
               activeTenant={activeTenant}
               onSelectTenant={onSelectTenant}
               onSelectEntity={onSelectEntity}
+            />
+          </div>
+        )}
+
+        {/* DIMENSION: 3D FORCE-DIRECTED GRAPH */}
+        {dimension === 'force_3d' && (
+          <div className="w-full h-full absolute inset-0">
+            <ThreeDForceGraph
+              tenants={tenants}
+              activeTenant={activeTenant}
+              onSelectTenant={onSelectTenant}
             />
           </div>
         )}
