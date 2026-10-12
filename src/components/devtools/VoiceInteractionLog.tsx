@@ -17,7 +17,11 @@ import {
   Clock,
   Trash2,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Smile,
+  Frown,
+  ThumbsUp,
+  AlertTriangle
 } from 'lucide-react';
 import { ConversationTurn } from './VoiceControlModal';
 
@@ -43,7 +47,7 @@ export const VoiceInteractionLog: React.FC<VoiceInteractionLogProps> = ({
   onClearLog,
   className = '',
 }) => {
-  const [filterRole, setFilterRole] = useState<'all' | 'user' | 'agent' | 'interrupted'>('all');
+  const [filterRole, setFilterRole] = useState<'all' | 'user' | 'agent' | 'interrupted' | 'positive' | 'negative' | 'urgent'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedTurns, setExpandedTurns] = useState<Record<string, boolean>>({});
   const [copiedTurnId, setCopiedTurnId] = useState<string | null>(null);
@@ -67,8 +71,8 @@ export const VoiceInteractionLog: React.FC<VoiceInteractionLogProps> = ({
 
   const handleCopyTurn = (turn: ConversationTurn) => {
     const textToCopy = `[${turn.timestamp}] ${turn.role.toUpperCase()}: ${turn.text}${
-      turn.actionResult ? `\nРезультат: ${turn.actionResult}` : ''
-    }${turn.interrupted ? ' (ПРЕРВАНО через Barge-in)' : ''}`;
+      turn.sentiment ? ` (Тональность: ${turn.sentiment.toUpperCase()})` : ''
+    }${turn.actionResult ? `\nРезультат: ${turn.actionResult}` : ''}${turn.interrupted ? ' (ПРЕРВАНО через Barge-in)' : ''}`;
 
     navigator.clipboard.writeText(textToCopy);
     setCopiedTurnId(turn.id);
@@ -90,8 +94,8 @@ export const VoiceInteractionLog: React.FC<VoiceInteractionLogProps> = ({
       .map(
         (t) =>
           `[${t.timestamp}] ${t.role === 'user' ? 'ПОЛЬЗОВАТЕЛЬ' : 'AI АССИСТЕНТ'}: ${t.text}${
-            t.interrupted ? ' [ПРЕРВАНО / BARGE-IN]' : ''
-          }${t.actionResult ? ` -> ${t.actionResult}` : ''}`
+            t.sentiment ? ` [Тональность: ${t.sentiment}]` : ''
+          }${t.interrupted ? ' [ПРЕРВАНО / BARGE-IN]' : ''}${t.actionResult ? ` -> ${t.actionResult}` : ''}`
       )
       .join('\n\n');
     navigator.clipboard.writeText(fullTranscript);
@@ -104,6 +108,9 @@ export const VoiceInteractionLog: React.FC<VoiceInteractionLogProps> = ({
     if (filterRole === 'user' && turn.role !== 'user') return false;
     if (filterRole === 'agent' && turn.role !== 'agent') return false;
     if (filterRole === 'interrupted' && !turn.interrupted) return false;
+    if (filterRole === 'positive' && turn.sentiment !== 'positive') return false;
+    if (filterRole === 'negative' && turn.sentiment !== 'negative') return false;
+    if (filterRole === 'urgent' && turn.sentiment !== 'urgent') return false;
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -111,7 +118,9 @@ export const VoiceInteractionLog: React.FC<VoiceInteractionLogProps> = ({
       const matchResult = turn.actionResult?.toLowerCase().includes(q) ?? false;
       const matchEntity = turn.affectedEntity?.toLowerCase().includes(q) ?? false;
       const matchIntent = turn.intent?.toLowerCase().includes(q) ?? false;
-      return matchText || matchResult || matchEntity || matchIntent;
+      const matchSentiment = turn.sentiment?.toLowerCase().includes(q) ?? false;
+      const matchReason = turn.sentimentReason?.toLowerCase().includes(q) ?? false;
+      return matchText || matchResult || matchEntity || matchIntent || matchSentiment || matchReason;
     }
 
     return true;
@@ -120,6 +129,9 @@ export const VoiceInteractionLog: React.FC<VoiceInteractionLogProps> = ({
   const userTurnsCount = turns.filter((t) => t.role === 'user').length;
   const agentTurnsCount = turns.filter((t) => t.role === 'agent').length;
   const interruptedCount = turns.filter((t) => t.interrupted).length;
+  const positiveCount = turns.filter((t) => t.sentiment === 'positive').length;
+  const negativeCount = turns.filter((t) => t.sentiment === 'negative').length;
+  const urgentCount = turns.filter((t) => t.sentiment === 'urgent').length;
 
   const lastAgentTurn = [...turns].reverse().find((t) => t.role === 'agent');
   const [copiedLastAgent, setCopiedLastAgent] = useState<boolean>(false);
@@ -278,6 +290,48 @@ export const VoiceInteractionLog: React.FC<VoiceInteractionLogProps> = ({
               Barge-in ({interruptedCount})
             </button>
           )}
+
+          {positiveCount > 0 && (
+            <button
+              onClick={() => setFilterRole('positive')}
+              className={`px-2.5 py-0.5 rounded-lg text-[10px] font-mono transition-colors flex items-center gap-1 ${
+                filterRole === 'positive'
+                  ? 'bg-emerald-950 text-emerald-300 font-semibold border border-emerald-600'
+                  : 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40'
+              }`}
+            >
+              <Smile className="w-2.5 h-2.5 text-emerald-400" />
+              Позитив ({positiveCount})
+            </button>
+          )}
+
+          {negativeCount > 0 && (
+            <button
+              onClick={() => setFilterRole('negative')}
+              className={`px-2.5 py-0.5 rounded-lg text-[10px] font-mono transition-colors flex items-center gap-1 ${
+                filterRole === 'negative'
+                  ? 'bg-rose-950 text-rose-300 font-semibold border border-rose-600'
+                  : 'text-rose-400 hover:text-rose-300 hover:bg-rose-950/40'
+              }`}
+            >
+              <AlertCircle className="w-2.5 h-2.5 text-rose-400" />
+              Негатив ({negativeCount})
+            </button>
+          )}
+
+          {urgentCount > 0 && (
+            <button
+              onClick={() => setFilterRole('urgent')}
+              className={`px-2.5 py-0.5 rounded-lg text-[10px] font-mono transition-colors flex items-center gap-1 ${
+                filterRole === 'urgent'
+                  ? 'bg-amber-950 text-amber-300 font-semibold border border-amber-600'
+                  : 'text-amber-400 hover:text-amber-300 hover:bg-amber-950/40'
+              }`}
+            >
+              <Zap className="w-2.5 h-2.5 text-amber-400" />
+              Срочно ({urgentCount})
+            </button>
+          )}
         </div>
 
         <div className="relative flex items-center">
@@ -399,6 +453,52 @@ export const VoiceInteractionLog: React.FC<VoiceInteractionLogProps> = ({
                       <span className="text-[10px] text-neutral-500 font-mono">
                         #{index + 1}
                       </span>
+
+                      {/* AI Sentiment Analysis Badge */}
+                      {turn.sentiment && (
+                        turn.sentiment === 'positive' ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-xs"
+                            title={turn.sentimentReason || 'Позитивная тональность (Cordis AI sentiment analysis)'}
+                          >
+                            <Smile className="w-3 h-3 text-emerald-400 shrink-0" />
+                            <span>Позитив</span>
+                            {turn.sentimentScore !== undefined && (
+                              <span className="text-emerald-400/80 font-mono text-[9px]">
+                                {turn.sentimentScore > 0 ? `+${Math.round(turn.sentimentScore * 100)}%` : `${Math.round(turn.sentimentScore * 100)}%`}
+                              </span>
+                            )}
+                          </span>
+                        ) : turn.sentiment === 'negative' ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-rose-500/15 text-rose-300 border border-rose-500/30 shadow-xs"
+                            title={turn.sentimentReason || 'Негативная тональность / Сообщение о сбое или баге'}
+                          >
+                            <AlertCircle className="w-3 h-3 text-rose-400 shrink-0" />
+                            <span>Негатив</span>
+                            {turn.sentimentScore !== undefined && (
+                              <span className="text-rose-400/80 font-mono text-[9px]">
+                                {Math.round(turn.sentimentScore * 100)}%
+                              </span>
+                            )}
+                          </span>
+                        ) : turn.sentiment === 'urgent' ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse shadow-xs"
+                            title={turn.sentimentReason || 'Срочный приоритет / Тревога'}
+                          >
+                            <Zap className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
+                            <span>Срочно</span>
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-mono bg-neutral-800/80 text-neutral-400 border border-neutral-700/60"
+                            title={turn.sentimentReason || 'Нейтральная тональность'}
+                          >
+                            <span>Нейтрально</span>
+                          </span>
+                        )
+                      )}
                     </div>
                   </div>
 

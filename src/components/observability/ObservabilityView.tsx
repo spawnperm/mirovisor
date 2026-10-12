@@ -24,6 +24,7 @@ import {
   Bug,
   Trash2,
   CheckCircle2,
+  Zap,
 } from 'lucide-react';
 import { Tenant, SystemMetric, ClientLogEntry } from '../../types';
 import { ResourceUtilizationDashboard } from './ResourceUtilizationDashboard';
@@ -31,6 +32,7 @@ import { NatsJetStreamMonitoringWidget } from './NatsJetStreamMonitoringWidget';
 import { D3HistoricalTrendLineChart } from './D3HistoricalTrendLineChart';
 import { PerformanceDashboard } from './PerformanceDashboard';
 import { SystemResourceMonitor } from './SystemResourceMonitor';
+import { ResourceAutoScalingSimulation } from './ResourceAutoScalingSimulation';
 import { LogUtility } from '../../services/logUtility';
 import { useClientLogsSlice } from '../../store/selectors';
 
@@ -50,7 +52,7 @@ interface LokiLog {
 
 export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, metrics }) => {
   const [activeTab, setActiveTab] = useState<
-    'performance' | 'system_monitor' | 'trend_history' | 'nats_jetstream' | 'utilization' | 'prometheus_loki'
+    'performance' | 'system_monitor' | 'trend_history' | 'nats_jetstream' | 'utilization' | 'autoscaling' | 'prometheus_loki'
   >('performance');
 
   const { clientLogs, addClientLog, clearClientLogs } = useClientLogsSlice();
@@ -193,6 +195,18 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
           </button>
 
           <button
+            onClick={() => setActiveTab('autoscaling')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
+              activeTab === 'autoscaling'
+                ? 'bg-cyan-600 text-white shadow-sm'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5" />
+            Автомасштабирование (Predictive Recharts)
+          </button>
+
+          <button
             onClick={() => setActiveTab('prometheus_loki')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
               activeTab === 'prometheus_loki'
@@ -228,6 +242,8 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
           </div>
         ) : activeTab === 'utilization' ? (
           <ResourceUtilizationDashboard activeTenant={tenant} />
+        ) : activeTab === 'autoscaling' ? (
+          <ResourceAutoScalingSimulation tenant={tenant} />
         ) : (
           <div className="flex flex-col h-full p-4 gap-4 overflow-y-auto">
             {/* Header */}

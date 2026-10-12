@@ -1,6 +1,15 @@
 import { GoogleGenAI } from '@google/genai';
 import { KanbanCard, CardType, CardPriority } from '../types';
 
+export type VoiceSentiment = 'positive' | 'negative' | 'neutral' | 'urgent';
+
+export interface SentimentAnalysisResult {
+  sentiment: VoiceSentiment;
+  score: number;
+  label: string;
+  explanation?: string;
+}
+
 export interface AgentRunResult {
   card: KanbanCard;
   agentName: string;
@@ -239,6 +248,9 @@ export class AiAgentService {
     intent?: string;
     affectedEntity?: string;
     metadata?: Record<string, any>;
+    sentiment?: VoiceSentiment;
+    sentimentScore?: number;
+    sentimentReason?: string;
   }>) {
     if (Array.isArray(history)) {
       this.voiceConversationHistory = [...history];
@@ -253,6 +265,9 @@ export class AiAgentService {
     intent?: string;
     affectedEntity?: string;
     metadata?: Record<string, any>;
+    sentiment?: VoiceSentiment;
+    sentimentScore?: number;
+    sentimentReason?: string;
   }) {
     const newTurn = {
       id: `vt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -261,6 +276,129 @@ export class AiAgentService {
     };
     this.voiceConversationHistory.push(newTurn);
     return newTurn;
+  }
+
+  /**
+   * Analyze emotional and communicative sentiment of user voice input
+   * using Gemini Flash model when online or deterministic multilingual rule engine.
+   */
+  public async analyzeSentiment(text: string): Promise<SentimentAnalysisResult> {
+    const normalized = (text || '').toLowerCase().trim();
+    if (!normalized) {
+      return {
+        sentiment: 'neutral',
+        score: 0,
+        label: 'Нейтральный',
+        explanation: 'Отсутствует текст высказывания',
+      };
+    }
+
+    // 1. Try Gemini Generative AI if initialized
+    if (this.ai) {
+      try {
+        const response = await this.ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: `Определи тональность и намерение голосовой реплики пользователя:
+"${text}"
+
+Варианты sentiment:
+- "positive": похвала, одобрение, благодарность, успех, радость, облегчение
+- "negative": жалоба, обнаружение бага, сбой, критика, фрустрация, падение сервиса
+- "urgent": тревога, сигнал аварии, требование немедленной остановки или отката
+- "neutral": спокойный информационный запрос, переход по вкладкам, стандартная команда
+
+Ответь ТОЛЬКО валидным JSON без markdown:
+{
+  "sentiment": "positive" | "negative" | "urgent" | "neutral",
+  "score": число от -1.0 до 1.0,
+  "label": "краткий лейбл на русском (1-2 слова)",
+  "explanation": "причина (кратко, до 10 слов)"
+}`,
+        });
+
+        const raw = response.text || '';
+        const clean = raw.replace(/```json|```/g, '').trim();
+        const parsed = JSON.parse(clean);
+        if (parsed.sentiment && ['positive', 'negative', 'urgent', 'neutral'].includes(parsed.sentiment)) {
+          return {
+            sentiment: parsed.sentiment,
+            score: typeof parsed.score === 'number' ? parsed.score : (parsed.sentiment === 'positive' ? 0.8 : parsed.sentiment === 'negative' ? -0.8 : parsed.sentiment === 'urgent' ? -0.5 : 0),
+            label: parsed.label || (parsed.sentiment === 'positive' ? 'Позитивный' : parsed.sentiment === 'negative' ? 'Негативный / Предупреждение' : parsed.sentiment === 'urgent' ? 'Срочный' : 'Нейтральный'),
+            explanation: parsed.explanation || 'Анализ Gemini Flash',
+          };
+        }
+      } catch (err) {
+        // Fallback to local heuristic analyzer on error or offline
+      }
+    }
+
+    // 2. High-precision rule-based sentiment classifier (offline-ready)
+    const positiveTokens = [
+      'отлично', 'супер', 'спасибо', 'благодарю', 'хорошо', 'прекрасно',
+      'успешно', 'здорово', 'молодец', 'класс', 'ура', 'великолепно',
+      'люблю', 'нравится', 'работает', 'готово', 'красиво', 'огонь',
+      'nice', 'great', 'success', 'good', 'passed', 'perfect', 'awesome', 'thanks'
+    ];
+
+    const negativeTokens = [
+      'ошибка', 'сломалось', 'баг', 'ужасно', 'плохо', 'медленно',
+      'зависло', 'провал', 'падение', 'уязвимость', 'проблема', 'не работает',
+      'глючит', 'краш', 'бесит', 'откат', 'rollback', 'fail', 'failed',
+      'error', 'bug', 'critical', 'break', 'broken', 'cwe', 'drop'
+    ];
+
+    const urgentTokens = [
+      'срочно', 'немедленно', 'быстрее', 'авария', 'внимание', 'пожар',
+      'alert', 'stop', 'halt', 'emergency', 'alarm', 'sos', 'тревога', 'караул'
+    ];
+
+    let posCount = 0;
+    let negCount = 0;
+    let urgCount = 0;
+
+    for (const t of positiveTokens) {
+      if (normalized.includes(t)) posCount++;
+    }
+    for (const t of negativeTokens) {
+      if (normalized.includes(t)) negCount++;
+    }
+    for (const t of urgentTokens) {
+      if (normalized.includes(t)) urgCount++;
+    }
+
+    if (urgCount > 0 || (normalized.includes('!') && negCount > 0)) {
+      return {
+        sentiment: 'urgent',
+        score: -0.65,
+        label: 'Срочный приоритет',
+        explanation: 'Обнаружены маркеры критичности и экстренного действия',
+      };
+    }
+
+    if (negCount > posCount) {
+      return {
+        sentiment: 'negative',
+        score: -0.82,
+        label: 'Негативный / Предупреждение',
+        explanation: 'Обнаружены маркеры сбоя, дефекта или неудовлетворенности',
+      };
+    }
+
+    if (posCount > negCount) {
+      return {
+        sentiment: 'positive',
+        score: 0.88,
+        label: 'Позитивный',
+        explanation: 'Выражение одобрения, подтверждение успеха или благодарность',
+      };
+    }
+
+    return {
+      sentiment: 'neutral',
+      score: 0.05,
+      label: 'Нейтральный',
+      explanation: 'Стандартный рабочий голосовой запрос или навигация',
+    };
   }
 
   public getLastUserTurn() {

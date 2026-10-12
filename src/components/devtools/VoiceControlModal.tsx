@@ -49,6 +49,9 @@ export interface ConversationTurn {
   intent?: string;
   affectedEntity?: string;
   metadata?: Record<string, any>;
+  sentiment?: 'positive' | 'negative' | 'neutral' | 'urgent';
+  sentimentScore?: number;
+  sentimentReason?: string;
 }
 
 interface VoiceControlModalProps {
@@ -245,53 +248,60 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
 
     setSpokenText(trimmed);
     setIsProcessing(true);
-    setStatusMessage(`Распознавание интента: "${trimmed}"... Запрос к Gemini Live с передачей контекста диалога...`);
+    setStatusMessage(`Анализ тональности и интента: "${trimmed}" через Cordis AI...`);
 
-    // 1. Record user turn into persistent memory array
-    const userTurn: ConversationTurn = {
-      id: `vt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      role: 'user',
-      text: trimmed,
-    };
-    
-    // Get snapshot of conversation memory with this new user turn
-    const memoryWithUser = [...conversationMemory, userTurn];
-    updateMemory(memoryWithUser);
-    AiAgentService.getInstance().syncVoiceConversationHistory(memoryWithUser);
-
-    setTimeout(() => {
-      // 2. Execute command in App with full conversationMemory array passed!
-      const result = onExecuteVoiceCommand(trimmed, memoryWithUser);
-      setIsProcessing(false);
-
-      const agentReply = result && result.responseSpeech
-        ? result.responseSpeech
-        : `Команда «${trimmed}» успешно выполнена в контексте тенанта «${activeTenant.name}».`;
-
-      const actionNote = result && result.details ? result.details : 'Исполнено в системе';
-
-      // 3. Record agent reply into persistent memory array
-      const agentTurn: ConversationTurn = {
+    // 1. Analyze sentiment of user voice input using the AI service
+    AiAgentService.getInstance().analyzeSentiment(trimmed).then((sentimentRes) => {
+      // Record user turn into persistent memory array with AI sentiment analysis
+      const userTurn: ConversationTurn = {
         id: `vt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        role: 'agent',
-        text: agentReply,
-        actionResult: actionNote,
-        intent: result ? result.intent : 'general',
-        affectedEntity: result ? result.affectedEntity : undefined,
+        role: 'user',
+        text: trimmed,
+        sentiment: sentimentRes.sentiment,
+        sentimentScore: sentimentRes.score,
+        sentimentReason: sentimentRes.explanation || sentimentRes.label,
       };
 
-      const finalMemory = [...memoryWithUser, agentTurn];
-      updateMemory(finalMemory);
-      AiAgentService.getInstance().syncVoiceConversationHistory(finalMemory);
-      setStatusMessage(`Агент отвечает: воспроизведение голоса... (Вы можете перебить!)`);
+      // Get snapshot of conversation memory with this new user turn
+      const memoryWithUser = [...conversationMemory, userTurn];
+      updateMemory(memoryWithUser);
+      AiAgentService.getInstance().syncVoiceConversationHistory(memoryWithUser);
 
-      // 4. Play audio with barge-in capability
-      startAgentSpeaking(agentReply, () => {
-        setStatusMessage('Команда завершена. Готов к следующей голосовой инструкции...');
-      });
-    }, 500);
+      setTimeout(() => {
+        // 2. Execute command in App with full conversationMemory array passed!
+        const result = onExecuteVoiceCommand(trimmed, memoryWithUser);
+        setIsProcessing(false);
+
+        const agentReply = result && result.responseSpeech
+          ? result.responseSpeech
+          : `Команда «${trimmed}» успешно выполнена в контексте тенанта «${activeTenant.name}».`;
+
+        const actionNote = result && result.details ? result.details : 'Исполнено в системе';
+
+        // 3. Record agent reply into persistent memory array
+        const agentTurn: ConversationTurn = {
+          id: `vt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          role: 'agent',
+          text: agentReply,
+          actionResult: actionNote,
+          intent: result ? result.intent : 'general',
+          affectedEntity: result ? result.affectedEntity : undefined,
+          sentiment: sentimentRes.sentiment === 'negative' || sentimentRes.sentiment === 'urgent' ? 'neutral' : 'positive',
+        };
+
+        const finalMemory = [...memoryWithUser, agentTurn];
+        updateMemory(finalMemory);
+        AiAgentService.getInstance().syncVoiceConversationHistory(finalMemory);
+        setStatusMessage(`Агент отвечает: воспроизведение голоса... (Вы можете перебить!)`);
+
+        // 4. Play audio with barge-in capability
+        startAgentSpeaking(agentReply, () => {
+          setStatusMessage('Команда завершена. Готов к следующей голосовой инструкции...');
+        });
+      }, 450);
+    });
   }, [activeTenant.name, conversationMemory, onExecuteVoiceCommand, startAgentSpeaking, stopAgentSpeaking, updateMemory]);
 
   // =========================================================================
