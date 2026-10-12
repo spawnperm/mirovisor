@@ -96,6 +96,24 @@ export const selectDevToolsState = (state: AppState) => ({
   executeMacro: state.executeMacro,
 });
 
+export const selectThemeState = (state: AppState) => ({
+  theme: state.theme,
+  setTheme: state.setTheme,
+  toggleTheme: state.toggleTheme,
+});
+
+export const selectClientLogsState = (state: AppState) => ({
+  clientLogs: state.clientLogs,
+  addClientLog: state.addClientLog,
+  clearClientLogs: state.clearClientLogs,
+});
+
+export const selectRlsPoliciesState = (state: AppState) => ({
+  rlsPolicies: state.rlsPolicies,
+  saveRlsPolicy: state.saveRlsPolicy,
+  deleteRlsPolicy: state.deleteRlsPolicy,
+});
+
 // Domain-specific custom hooks using useShallow to prevent unnecessary component re-renders
 export const useNavigationSlice = () => useAppStore(useShallow(selectNavigationState));
 export const useA11ySlice = () => useAppStore(useShallow(selectA11yPreferences));
@@ -108,8 +126,12 @@ export const useLmsSlice = () => useAppStore(useShallow(selectLmsState));
 export const useSocialSlice = () => useAppStore(useShallow(selectSocialState));
 export const useSecuritySlice = () => useAppStore(useShallow(selectSecurityState));
 export const useDevToolsSlice = () => useAppStore(useShallow(selectDevToolsState));
+export const useThemeSlice = () => useAppStore(useShallow(selectThemeState));
+export const useClientLogsSlice = () => useAppStore(useShallow(selectClientLogsState));
+export const useRlsPoliciesSlice = () => useAppStore(useShallow(selectRlsPoliciesState));
 
 // Primitive selector: returns a single primitive value without triggering re-renders unless the scalar count changes
 export const useMetricsSlice = () => useAppStore((state) => state.metrics);
 export const useInProgressCardsCount = () =>
   useAppStore((state) => state.cards.filter((c) => c.column === 'in_progress').length);
+

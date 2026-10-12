@@ -1,9 +1,37 @@
-import React, { useState } from 'react';
-import { Activity, Server, AlertTriangle, Cpu, Database, HardDrive, Terminal, RefreshCw, BarChart2, Radio, TrendingUp } from 'lucide-react';
-import { Tenant, SystemMetric } from '../../types';
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ * Mirovisor Multi-Tenant Observability View
+ * Includes D3 Trends, NATS JetStream, Resource Utilization,
+ * Recharts Performance Dashboard (Web Vitals + Memory + Render Times),
+ * and Prometheus / Loki Logs + Client-Side LogUtility Exception Audit Trails.
+ */
+
+import React, { useState, useEffect } from 'react';
+import {
+  Activity,
+  Server,
+  AlertTriangle,
+  Cpu,
+  Database,
+  HardDrive,
+  Terminal,
+  RefreshCw,
+  BarChart2,
+  Radio,
+  TrendingUp,
+  Gauge,
+  Bug,
+  Trash2,
+  CheckCircle2,
+} from 'lucide-react';
+import { Tenant, SystemMetric, ClientLogEntry } from '../../types';
 import { ResourceUtilizationDashboard } from './ResourceUtilizationDashboard';
 import { NatsJetStreamMonitoringWidget } from './NatsJetStreamMonitoringWidget';
 import { D3HistoricalTrendLineChart } from './D3HistoricalTrendLineChart';
+import { PerformanceDashboard } from './PerformanceDashboard';
+import { LogUtility } from '../../services/logUtility';
+import { useClientLogsSlice } from '../../store/selectors';
 
 interface ObservabilityViewProps {
   tenant: Tenant;
@@ -20,7 +48,11 @@ interface LokiLog {
 }
 
 export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, metrics }) => {
-  const [activeTab, setActiveTab] = useState<'utilization' | 'nats_jetstream' | 'trend_history' | 'prometheus_loki'>('trend_history');
+  const [activeTab, setActiveTab] = useState<
+    'performance' | 'trend_history' | 'nats_jetstream' | 'utilization' | 'prometheus_loki'
+  >('performance');
+
+  const { clientLogs, addClientLog, clearClientLogs } = useClientLogsSlice();
 
   const currentMetric = metrics[tenant.id] || {
     tenantId: tenant.id,
@@ -32,7 +64,7 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
     dbQueriesPerSec: 900,
   };
 
-  const [logFilter, setLogFilter] = useState<string>('all');
+  const [logFilter, setLogFilter] = useState<'all' | 'info' | 'warn' | 'error' | 'client'>('all');
   const [logs, setLogs] = useState<LokiLog[]>([
     { id: '1', timestamp: '23:14:02.102', service: 'NestJS-API', level: 'info', message: `TenantMiddleware: session validated for orgId: ${tenant.id}`, orgId: tenant.id },
     { id: '2', timestamp: '23:14:05.441', service: 'Drizzle-ORM', level: 'info', message: `SET LOCAL app.current_tenant = '${tenant.id}'; RLS Active.`, orgId: tenant.id },
@@ -41,6 +73,14 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
     { id: '5', timestamp: '23:14:15.901', service: 'Loki-Querier', level: 'info', message: `Multi-tenant query executed: {org_id="${tenant.id}"}`, orgId: tenant.id },
     { id: '6', timestamp: '23:14:20.124', service: 'Temporal-Worker', level: 'info', message: `OrderWorkflow heartbeat OK (time-skipping test suite passed)`, orgId: tenant.id },
   ]);
+
+  // Subscribe to LogUtility events
+  useEffect(() => {
+    const unsubscribe = LogUtility.subscribe((entry) => {
+      addClientLog(entry);
+    });
+    return unsubscribe;
+  }, [addClientLog]);
 
   const addSimulatedLog = () => {
     const services = ['NestJS-API', 'Drizzle-ORM', 'NATS-Broker', 'Redis-Feed', 'CrowdSec'];
@@ -56,13 +96,53 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
     setLogs((prev) => [newEntry, ...prev.slice(0, 15)]);
   };
 
-  const filteredLogs = logs.filter((l) => (logFilter === 'all' ? true : l.level === logFilter));
+  const handleTriggerTestClientError = () => {
+    try {
+      throw new Error(`Тестовое клиентское исключение (Simulated Client Exception): Не удалось разобрать payload веб-сокета в tenant ${tenant.schema}`);
+    } catch (err: any) {
+      LogUtility.error(err.message, err, { tenantId: tenant.id, schema: tenant.schema }, 'WebSocket-Harness');
+    }
+  };
+
+  // Combine server logs and client logs into unified audit view
+  const combinedLogs = React.useMemo(() => {
+    const normalizedClientLogs: LokiLog[] = (clientLogs || []).map((cl) => ({
+      id: cl.id,
+      timestamp: cl.timestamp,
+      service: `[Client] ${cl.service}`,
+      level: cl.level,
+      message: `${cl.message}${cl.stack ? ` | Stack: ${cl.stack.split('\n')[1] || ''}` : ''}`,
+      orgId: cl.orgId || tenant.id,
+    }));
+
+    if (logFilter === 'client') {
+      return normalizedClientLogs;
+    }
+
+    const merged = [...normalizedClientLogs, ...logs];
+    merged.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+    if (logFilter === 'all') return merged;
+    return merged.filter((l) => l.level === logFilter);
+  }, [logs, clientLogs, logFilter, tenant.id]);
 
   return (
     <div className="flex flex-col h-full bg-neutral-950 overflow-hidden">
       {/* Subtab Navigation Switcher */}
-      <div className="px-4 pt-3 pb-2 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 p-1 bg-neutral-900 border border-neutral-800 rounded-xl text-xs">
+      <div className="px-4 pt-3 pb-2 bg-neutral-950 border-b border-neutral-800 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-neutral-900 border border-neutral-800 rounded-xl text-xs">
+          <button
+            onClick={() => setActiveTab('performance')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
+              activeTab === 'performance'
+                ? 'bg-cyan-600 text-white shadow-sm'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Gauge className="w-3.5 h-3.5" />
+            Производительность & Web Vitals (Recharts)
+          </button>
+
           <button
             onClick={() => setActiveTab('trend_history')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
@@ -108,7 +188,7 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
             }`}
           >
             <Terminal className="w-3.5 h-3.5" />
-            Prometheus Метрики & Loki Логи
+            Prometheus & Loki / LogUtility
           </button>
         </div>
 
@@ -121,7 +201,9 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
 
       {/* Main View Render */}
       <div className="flex-1 overflow-hidden">
-        {activeTab === 'trend_history' ? (
+        {activeTab === 'performance' ? (
+          <PerformanceDashboard tenant={tenant} />
+        ) : activeTab === 'trend_history' ? (
           <div className="h-full p-4 overflow-y-auto space-y-4">
             <D3HistoricalTrendLineChart tenant={tenant} height={380} />
           </div>
@@ -141,23 +223,43 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                    OBSERVABILITY & MONITORING HUB (PROMETHEUS · LOKI · GRAFANA)
+                    OBSERVABILITY & MONITORING HUB (PROMETHEUS · LOKI · LOGUTILITY)
                     <span className="text-[10px] font-mono px-1.5 py-0.5 bg-neutral-800 text-neutral-300 rounded">
                       X-Scope-OrgID: {tenant.id}
                     </span>
                   </h2>
                   <div className="text-xs text-neutral-400">
-                    Схема мониторинга: <strong className="text-white">{tenant.schema}</strong> · Метрики Prometheus v2.52
+                    Схема мониторинга: <strong className="text-white">{tenant.schema}</strong> · Метрики Prometheus v2.52 + Клиентский аудит LogUtility
                   </div>
                 </div>
               </div>
 
-              <button
-                onClick={addSimulatedLog}
-                className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg text-xs font-mono flex items-center gap-1.5 border border-neutral-700"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Сгенерировать лог
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleTriggerTestClientError}
+                  className="px-3 py-1.5 bg-rose-950/80 hover:bg-rose-900 text-rose-300 rounded-lg text-xs font-mono flex items-center gap-1.5 border border-rose-800/60 cursor-pointer"
+                  title="Сгенерировать тестовое клиентское исключение для проверки аудита LogUtility"
+                >
+                  <Bug className="w-3.5 h-3.5" /> Тест ошибки клиента
+                </button>
+
+                <button
+                  onClick={addSimulatedLog}
+                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg text-xs font-mono flex items-center gap-1.5 border border-neutral-700 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Сгенерировать лог
+                </button>
+
+                {clientLogs.length > 0 && (
+                  <button
+                    onClick={clearClientLogs}
+                    className="p-1.5 bg-neutral-850 hover:bg-neutral-800 text-neutral-400 hover:text-white rounded-lg border border-neutral-700 cursor-pointer"
+                    title="Очистить клиентский журнал LogUtility"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Real-time KPI Metric Cards */}
@@ -193,35 +295,41 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
               </div>
 
               <div className="p-3 bg-neutral-900/60 border border-neutral-800 rounded-xl">
-                <span className="text-[11px] text-neutral-400 block mb-1">SQL QPS (Drizzle)</span>
-                <span className="text-xl font-bold font-mono text-indigo-400">{currentMetric.dbQueriesPerSec}</span>
-                <span className="text-[10px] text-neutral-500 block mt-1">RLS Scoped</span>
+                <span className="text-[11px] text-neutral-400 block mb-1">Ошибки клиента (LogUtility)</span>
+                <span className="text-xl font-bold font-mono text-rose-400">{clientLogs.length}</span>
+                <span className="text-[10px] text-neutral-500 block mt-1">Audit Trail Active</span>
               </div>
             </div>
 
-            {/* Loki Multi-Tenant Log Stream */}
+            {/* Unified Loki & LogUtility Multi-Tenant Log Stream */}
             <div className="flex-1 bg-neutral-900/50 border border-neutral-800 rounded-xl overflow-hidden flex flex-col min-h-[300px]">
-              <div className="p-3 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between text-xs">
+              <div className="p-3 bg-neutral-950 border-b border-neutral-800 flex flex-wrap items-center justify-between gap-2 text-xs">
                 <div className="flex items-center gap-2">
                   <Terminal className="w-4 h-4 text-emerald-400" />
-                  <span className="font-bold text-white">LOKI ЖУРНАЛ СОБЫТИЙ (auth_enabled: true)</span>
+                  <span className="font-bold text-white">ЖУРНАЛ СОБЫТИЙ LOKI & КЛИЕНТСКИЙ АУДИТ LOGUTILITY</span>
                   <span className="text-[11px] font-mono text-neutral-500">
-                    Query: &#123;app="mirovisor", org_id="{tenant.id}"&#125;
+                    &#123;org_id="{tenant.id}"&#125;
                   </span>
                 </div>
 
                 <div className="flex items-center gap-1">
-                  {['all', 'info', 'warn', 'error'].map((lvl) => (
+                  {[
+                    { id: 'all', label: 'Все' },
+                    { id: 'info', label: 'Info' },
+                    { id: 'warn', label: 'Warn' },
+                    { id: 'error', label: 'Error' },
+                    { id: 'client', label: `Клиентские (${clientLogs.length})` },
+                  ].map((filterOption) => (
                     <button
-                      key={lvl}
-                      onClick={() => setLogFilter(lvl)}
-                      className={`px-2 py-0.5 rounded text-[11px] font-mono capitalize ${
-                        logFilter === lvl
-                          ? 'bg-neutral-800 text-white font-medium'
+                      key={filterOption.id}
+                      onClick={() => setLogFilter(filterOption.id as any)}
+                      className={`px-2.5 py-0.5 rounded text-[11px] font-mono transition-colors ${
+                        logFilter === filterOption.id
+                          ? 'bg-neutral-800 text-white font-medium border border-neutral-700'
                           : 'text-neutral-500 hover:text-white'
                       }`}
                     >
-                      {lvl}
+                      {filterOption.label}
                     </button>
                   ))}
                 </div>
@@ -229,21 +337,33 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
 
               {/* Logs Output */}
               <div className="flex-1 p-3 overflow-y-auto space-y-1 font-mono text-xs bg-black/70">
-                {filteredLogs.map((log) => (
-                  <div
-                    key={log.id}
-                    className={`flex items-start gap-3 py-1 border-b border-neutral-850/60 ${
-                      log.level === 'warn' ? 'text-amber-300' : log.level === 'error' ? 'text-rose-400' : 'text-neutral-300'
-                    }`}
-                  >
-                    <span className="text-neutral-500 text-[11px] shrink-0">{log.timestamp}</span>
-                    <span className="text-cyan-400 font-bold shrink-0 w-32 truncate">[{log.service}]</span>
-                    <span className="text-[10px] font-mono px-1 rounded bg-neutral-900 text-neutral-400 shrink-0">
-                      {log.orgId}
-                    </span>
-                    <span className="flex-1 break-all">{log.message}</span>
+                {combinedLogs.length === 0 ? (
+                  <div className="text-neutral-500 py-6 text-center">
+                    Нет зарегистрированных событий для фильтра "{logFilter}".
                   </div>
-                ))}
+                ) : (
+                  combinedLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className={`flex items-start gap-3 py-1.5 border-b border-neutral-850/60 ${
+                        log.level === 'warn'
+                          ? 'text-amber-300'
+                          : log.level === 'error'
+                          ? 'text-rose-400'
+                          : 'text-neutral-300'
+                      }`}
+                    >
+                      <span className="text-neutral-500 text-[11px] shrink-0">{log.timestamp}</span>
+                      <span className="text-cyan-400 font-bold shrink-0 max-w-[140px] truncate">
+                        {log.service}
+                      </span>
+                      <span className="text-[10px] font-mono px-1 rounded bg-neutral-900 text-neutral-400 shrink-0">
+                        {log.orgId}
+                      </span>
+                      <span className="flex-1 break-all leading-snug">{log.message}</span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>

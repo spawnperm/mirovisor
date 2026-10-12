@@ -14,7 +14,10 @@ import {
   PipelineBuild,
   TenantConfiguration,
   SystemMetric,
+  ClientLogEntry,
+  RlsPolicy,
 } from '../types';
+import { LogUtility } from '../services/logUtility';
 import { VoiceMacro } from '../types/macros';
 import { ConversationTurn, VoiceActionResult } from '../components/devtools/VoiceControlModal';
 import {
@@ -129,6 +132,21 @@ export interface AppState {
   announcementMessage: string | null;
   announceToScreenReader: (msg: string) => void;
 
+  // Theme Management (Tailwind CSS dark mode strategy)
+  theme: 'dark' | 'light';
+  setTheme: (theme: 'dark' | 'light') => void;
+  toggleTheme: () => void;
+
+  // Client-Side Error & Audit Logs (LogUtility)
+  clientLogs: ClientLogEntry[];
+  addClientLog: (log: ClientLogEntry) => void;
+  clearClientLogs: () => void;
+
+  // Postgres Row-Level Security (RLS) Policies
+  rlsPolicies: RlsPolicy[];
+  saveRlsPolicy: (policy: RlsPolicy) => void;
+  deleteRlsPolicy: (policyId: string) => void;
+
   // Reset UI State
   resetUiState: () => void;
 }
@@ -157,6 +175,76 @@ const loadStoredMacros = (): VoiceMacro[] => {
     } catch {}
   }
   return DEFAULT_VOICE_MACROS;
+};
+
+const INITIAL_RLS_POLICIES: RlsPolicy[] = [
+  {
+    id: 'rls_1',
+    tenantId: 't_holding',
+    tableName: 'crm_deals',
+    policyName: 'tenant_isolation_crm_deals',
+    command: 'ALL',
+    roles: 'public',
+    usingExpression: "tenant_id = current_setting('app.current_tenant_id', true)",
+    withCheckExpression: "tenant_id = current_setting('app.current_tenant_id', true)",
+    isPermissive: true,
+    status: 'active',
+    createdAt: '2026-10-12T00:00:00.000Z',
+    description: 'Изоляция сделок CRM на уровне текущего контекста схемы тенанта',
+  },
+  {
+    id: 'rls_2',
+    tenantId: 't_holding',
+    tableName: 'security_findings',
+    policyName: 'holding_auditor_security_findings',
+    command: 'SELECT',
+    roles: 'holding_auditor',
+    usingExpression: "current_setting('app.user_role', true) = 'holding_auditor' OR tenant_id = current_setting('app.current_tenant_id', true)",
+    isPermissive: true,
+    status: 'active',
+    createdAt: '2026-10-12T00:00:00.000Z',
+    description: 'Сквозной аудит уязвимостей безопасности для суперадминистратора и аудитора холдинга',
+  },
+  {
+    id: 'rls_3',
+    tenantId: 't_fintech',
+    tableName: 'kanban_cards',
+    policyName: 'fintech_strict_kanban_policy',
+    command: 'ALL',
+    roles: 'tenant_user',
+    usingExpression: "tenant_id = 't_fintech' AND current_setting('app.current_tenant_id', true) = 't_fintech'",
+    withCheckExpression: "tenant_id = 't_fintech'",
+    isPermissive: true,
+    status: 'active',
+    createdAt: '2026-10-12T00:00:00.000Z',
+    description: 'Строгая изоляция финтех-задач Канбан с запретом перемещения между тенантами',
+  },
+];
+
+const getStoredRlsPolicies = (): RlsPolicy[] => {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('mirovisor_rls_policies');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+  }
+  return INITIAL_RLS_POLICIES;
+};
+
+const getInitialTheme = (): 'dark' | 'light' => {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('mirovisor_theme');
+      if (saved === 'light' || saved === 'dark') {
+        document.documentElement.classList.toggle('dark', saved === 'dark');
+        return saved;
+      }
+    } catch {}
+  }
+  return 'dark';
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -785,6 +873,62 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
+  // Theme Management (Tailwind CSS dark mode strategy)
+  theme: getInitialTheme(),
+  setTheme: (theme) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('mirovisor_theme', theme);
+      document.documentElement.classList.toggle('dark', theme === 'dark');
+    }
+    set({ theme });
+  },
+  toggleTheme: () => {
+    const next = get().theme === 'dark' ? 'light' : 'dark';
+    get().setTheme(next);
+  },
+
+  // Client-Side Error & Audit Logs (LogUtility)
+  clientLogs: LogUtility.getStoredLogs(),
+  addClientLog: (log) => {
+    set((state) => ({ clientLogs: [log, ...state.clientLogs].slice(0, 100) }));
+  },
+  clearClientLogs: () => {
+    LogUtility.clearLogs();
+    set({ clientLogs: [] });
+  },
+
+  // Postgres Row-Level Security (RLS) Policies
+  rlsPolicies: getStoredRlsPolicies(),
+  saveRlsPolicy: (policy) => {
+    set((state) => {
+      const existingIdx = state.rlsPolicies.findIndex((p) => p.id === policy.id);
+      let updated: RlsPolicy[];
+      if (existingIdx >= 0) {
+        updated = [...state.rlsPolicies];
+        updated[existingIdx] = policy;
+      } else {
+        updated = [policy, ...state.rlsPolicies];
+      }
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('mirovisor_rls_policies', JSON.stringify(updated));
+        } catch {}
+      }
+      return { rlsPolicies: updated };
+    });
+  },
+  deleteRlsPolicy: (policyId) => {
+    set((state) => {
+      const updated = state.rlsPolicies.filter((p) => p.id !== policyId);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('mirovisor_rls_policies', JSON.stringify(updated));
+        } catch {}
+      }
+      return { rlsPolicies: updated };
+    });
+  },
+
   resetUiState: () => {
     set({
       activeTab: 'audit',
@@ -795,6 +939,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       isMacroRegistryOpen: false,
       metrics: INITIAL_METRICS,
       toasts: [],
+      clientLogs: LogUtility.getStoredLogs(),
+      rlsPolicies: INITIAL_RLS_POLICIES,
     });
   },
 }));

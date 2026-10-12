@@ -23,9 +23,12 @@ import {
   X,
   Cpu,
   Eye,
-  Sliders
+  Sliders,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { Tenant, User } from '../../types';
+import { useThemeSlice } from '../../store/selectors';
 
 interface TenantTreeNode {
   tenant: Tenant;
@@ -83,6 +86,8 @@ export const Header: React.FC<HeaderProps> = ({
   const [expandedTenantIds, setExpandedTenantIds] = useState<Set<string>>(
     () => new Set(['tenant_acme', 'tenant_betalabs', 'tenant_nordic', 'tenant_cybershield'])
   );
+
+  const { theme, toggleTheme } = useThemeSlice();
 
   // Set of all tenant IDs that act as parents to other tenants
   const allParentTenantIds = useMemo(() => {
@@ -473,11 +478,22 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* User Profile & Quick Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* User-Controlled Theme Switcher (Tailwind CSS Dark Mode Strategy) */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="p-1.5 bg-neutral-900 hover:bg-neutral-800 text-amber-400 border border-neutral-800 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-amber-400"
+            title={theme === 'dark' ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'}
+            aria-label={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+
           {onOpenA11y && (
             <button
               type="button"
               onClick={onOpenA11y}
-              className="p-1.5 bg-neutral-900 hover:bg-neutral-800 text-cyan-400 border border-neutral-800 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-cyan-400"
+              className="p-1.5 bg-neutral-900 hover:bg-neutral-850 text-cyan-400 border border-neutral-800 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-cyan-400"
               title="Настройки доступности (WCAG 2.1 AA)"
               aria-label="Настройки доступности интерфейса"
             >

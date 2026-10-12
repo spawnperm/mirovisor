@@ -345,3 +345,41 @@ export interface ProductTelemetryEvent {
   userId: string;
 }
 
+export interface ClientLogEntry {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'warn' | 'error';
+  service: string;
+  message: string;
+  stack?: string;
+  context?: Record<string, any>;
+  orgId: string;
+  url?: string;
+}
+
+export interface WebVitalsMetrics {
+  lcp?: number;
+  fid?: number;
+  inp?: number;
+  cls?: number;
+  fcp?: number;
+  ttfb?: number;
+  lastUpdated: string;
+}
+
+export interface RlsPolicy {
+  id: string;
+  tenantId: string;
+  tableName: string;
+  policyName: string;
+  command: 'ALL' | 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
+  roles: string;
+  usingExpression: string;
+  withCheckExpression?: string;
+  isPermissive: boolean;
+  status: 'active' | 'draft' | 'deprecated';
+  createdAt: string;
+  description: string;
+}
+
+

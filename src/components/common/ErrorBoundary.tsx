@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertOctagon, RotateCcw, Terminal, RefreshCw, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
+import { LogUtility } from '../../services/logUtility';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -35,6 +36,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('ErrorBoundary caught an unhandled runtime error:', error, errorInfo);
+    LogUtility.error(
+      `React ErrorBoundary: ${error.message || 'Unhandled component render error'}`,
+      error,
+      { componentStack: errorInfo.componentStack },
+      'React-ErrorBoundary'
+    );
     this.setState({ errorInfo });
   }
 

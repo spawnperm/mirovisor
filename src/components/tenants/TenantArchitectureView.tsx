@@ -23,6 +23,7 @@ import {
   Radio
 } from 'lucide-react';
 import { Tenant, TenantConfiguration, TenantAutoScalingConfig } from '../../types';
+import { RlsPolicyEditor } from './RlsPolicyEditor';
 
 interface TenantArchitectureViewProps {
   tenants: Tenant[];
@@ -37,7 +38,7 @@ export const TenantArchitectureView: React.FC<TenantArchitectureViewProps> = ({
   onUpdateTenantConfig,
   onCreateTenant,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'branding' | 'autoscaling' | 'patterns' | 'simulator' | 'create'>('branding');
+  const [activeSubTab, setActiveSubTab] = useState<'branding' | 'autoscaling' | 'patterns' | 'simulator' | 'create' | 'rls_policies'>('branding');
   
   // Branding state for current active tenant
   const currentConfig: TenantConfiguration = activeTenant.config || {
@@ -303,6 +304,15 @@ COMMIT;`);
           >
             <Layers className="w-3.5 h-3.5" />
             Паттерны изоляции
+          </button>
+          <button
+            onClick={() => setActiveSubTab('rls_policies')}
+            className={`px-3 py-1 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
+              activeSubTab === 'rls_policies' ? 'bg-indigo-600 text-white shadow-xs' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+            RLS Политики & Песочница
           </button>
           <button
             onClick={() => setActiveSubTab('simulator')}
@@ -1099,6 +1109,13 @@ COMMIT;`);
               {simulatorOutput || 'Нажмите "Выполнить запрос с изоляцией RLS" для запуска симуляции...'}
             </pre>
           </div>
+        </div>
+      )}
+
+      {/* SUBTAB: RLS POLICIES & SANDBOX */}
+      {activeSubTab === 'rls_policies' && (
+        <div className="flex-1 overflow-y-auto">
+          <RlsPolicyEditor tenants={tenants} activeTenant={activeTenant} />
         </div>
       )}
 

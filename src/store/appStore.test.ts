@@ -120,9 +120,8 @@ describe('useAppStore (Zustand Global State)', () => {
       type: 'info',
     });
     store.recordTelemetryEvent({
-      action: 'click',
-      category: 'navigation',
-      label: 'test_button',
+      type: 'navigation_tab',
+      target: 'test_button',
     });
 
     const stateAfter = useAppStore.getState();
@@ -140,5 +139,55 @@ describe('useAppStore (Zustand Global State)', () => {
     for (const key of Object.keys(a11yBefore) as (keyof typeof a11yBefore)[]) {
       expect(a11yBefore[key]).toBe(a11yAfter[key]);
     }
+  });
+
+  it('manages user-controlled theme switcher and toggles dark mode', () => {
+    const store = useAppStore.getState();
+    store.setTheme('dark');
+    expect(useAppStore.getState().theme).toBe('dark');
+
+    store.toggleTheme();
+    expect(useAppStore.getState().theme).toBe('light');
+
+    store.toggleTheme();
+    expect(useAppStore.getState().theme).toBe('dark');
+  });
+
+  it('captures client-side errors via LogUtility and manages RLS policies', () => {
+    const store = useAppStore.getState();
+    const initialLogsCount = store.clientLogs.length;
+
+    // Add client error log
+    store.addClientLog({
+      id: 'test_err_1',
+      timestamp: '12:00:00.000',
+      level: 'error',
+      service: 'TestRunner',
+      message: 'Simulated client exception',
+      orgId: 't_holding',
+    });
+
+    expect(useAppStore.getState().clientLogs.length).toBe(initialLogsCount + 1);
+
+    // Test RLS policy management
+    const testPolicy = {
+      id: 'test_rls_new',
+      tenantId: 't_holding',
+      tableName: 'invoices',
+      policyName: 'invoice_tenant_isolation',
+      command: 'ALL' as const,
+      roles: 'public',
+      usingExpression: "tenant_id = current_setting('app.current_tenant_id', true)",
+      isPermissive: true,
+      status: 'active' as const,
+      createdAt: '2026-10-12T00:00:00.000Z',
+      description: 'Test policy',
+    };
+
+    store.saveRlsPolicy(testPolicy);
+    expect(useAppStore.getState().rlsPolicies.some((p) => p.id === 'test_rls_new')).toBe(true);
+
+    store.deleteRlsPolicy('test_rls_new');
+    expect(useAppStore.getState().rlsPolicies.some((p) => p.id === 'test_rls_new')).toBe(false);
   });
 });

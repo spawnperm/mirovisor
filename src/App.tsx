@@ -15,6 +15,8 @@ import { MacroRegistryModal } from './components/devtools/MacroRegistryModal';
 import { AccessibilitySettingsModal } from './components/common/AccessibilitySettingsModal';
 import { ToastContainer } from './components/common/ToastContainer';
 import { useProductTelemetry } from './hooks/useProductTelemetry';
+import { usePerformanceMonitoring } from './hooks/usePerformanceMonitoring';
+import { LogUtility } from './services/logUtility';
 import {
   useNavigationSlice,
   useA11ySlice,
@@ -204,6 +206,14 @@ export default function App() {
 
   // Automatic product interaction telemetry tracking
   useProductTelemetry();
+
+  // Lightweight performance monitoring hook (Core Web Vitals & module render metrics)
+  usePerformanceMonitoring();
+
+  // Centralized client-side log utility global error tracking
+  useEffect(() => {
+    LogUtility.initGlobalHandlers();
+  }, []);
 
   // Memoized modal toggle handlers
   const handleOpenSearch = useCallback(() => setSearchOpen(true), [setSearchOpen]);
