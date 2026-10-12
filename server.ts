@@ -12,6 +12,8 @@ import {
   TenantSchema,
   KanbanCardSchema,
   SecurityFindingSchema,
+  CardTagUpdateSchema,
+  CardPatchSchema,
   type ValidatedTenant,
   type ValidatedKanbanCard,
   type ValidatedSecurityFinding,
@@ -221,6 +223,82 @@ app.post('/api/v1/kanban/cards', (req: Request, res: Response) => {
 
   kanbanCards.push(validation.data);
   res.status(201).json({ data: validation.data });
+});
+
+// Update Card Tags Endpoint (Idempotent tag synchronization)
+app.put('/api/v1/kanban/cards/:id/tags', (req: Request, res: Response) => {
+  requestCount++;
+  const { id } = req.params;
+  const validation = CardTagUpdateSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).contentType('application/problem+json').json({
+      type: 'urn:mirovisor:error:validation',
+      title: 'Invalid Request Payload',
+      status: 400,
+      detail: 'Request body failed tag validation constraints.',
+      invalidParams: validation.error.issues.map((i) => ({
+        name: i.path.join('.'),
+        reason: i.message,
+      })),
+    });
+  }
+
+  const cardIndex = kanbanCards.findIndex((c) => c.id === id);
+  if (cardIndex === -1) {
+    return res.status(404).contentType('application/problem+json').json({
+      type: 'urn:mirovisor:error:not-found',
+      title: 'Card Not Found',
+      status: 404,
+      detail: `Kanban card with ID "${id}" was not found.`,
+    });
+  }
+
+  const uniqueTags = Array.from(new Set(validation.data.tags.map((t) => t.trim().toLowerCase())));
+  kanbanCards[cardIndex].tags = uniqueTags;
+
+  res.status(200).json({
+    data: kanbanCards[cardIndex],
+    message: `Tags updated for card ${id}`,
+  });
+});
+
+// Partial Card Update (PATCH)
+app.patch('/api/v1/kanban/cards/:id', (req: Request, res: Response) => {
+  requestCount++;
+  const { id } = req.params;
+  const validation = CardPatchSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).contentType('application/problem+json').json({
+      type: 'urn:mirovisor:error:validation',
+      title: 'Invalid Request Payload',
+      status: 400,
+      detail: 'Validation failed on patch fields.',
+      invalidParams: validation.error.issues.map((i) => ({
+        name: i.path.join('.'),
+        reason: i.message,
+      })),
+    });
+  }
+
+  const cardIndex = kanbanCards.findIndex((c) => c.id === id);
+  if (cardIndex === -1) {
+    return res.status(404).contentType('application/problem+json').json({
+      type: 'urn:mirovisor:error:not-found',
+      title: 'Card Not Found',
+      status: 404,
+      detail: `Kanban card with ID "${id}" was not found.`,
+    });
+  }
+
+  kanbanCards[cardIndex] = {
+    ...kanbanCards[cardIndex],
+    ...validation.data,
+  };
+
+  res.status(200).json({
+    data: kanbanCards[cardIndex],
+    message: `Card ${id} patched successfully`,
+  });
 });
 
 // Security Findings API

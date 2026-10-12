@@ -17,7 +17,9 @@ import {
   WifiOff,
   UserCheck,
   Save,
-  Check
+  Check,
+  Tag,
+  X
 } from 'lucide-react';
 import { KanbanCard, ChecklistItem } from '../../types';
 import { 
@@ -40,6 +42,33 @@ export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = (
   const [description, setDescription] = useState<string>(card.description);
   const [checklist, setChecklist] = useState<ChecklistItem[]>(card.checklist);
   const [newItemText, setNewItemText] = useState<string>('');
+
+  // User-defined tags state & handlers
+  const [newTagInput, setNewTagInput] = useState<string>('');
+
+  const handleAddTag = (tagToAdd?: string) => {
+    const raw = tagToAdd || newTagInput;
+    const clean = raw.trim().toLowerCase().replace(/^#/, '');
+    if (!clean) return;
+    const currentTags = card.tags || [];
+    if (!currentTags.includes(clean)) {
+      const updatedCard: KanbanCard = {
+        ...card,
+        tags: [...currentTags, clean],
+      };
+      onCardUpdate(updatedCard);
+    }
+    setNewTagInput('');
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    const currentTags = card.tags || [];
+    const updatedCard: KanbanCard = {
+      ...card,
+      tags: currentTags.filter((t) => t !== tagToRemove),
+    };
+    onCardUpdate(updatedCard);
+  };
 
   // Auto-save via localStorage state & refs
   const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'restored' | 'idle'>('idle');
@@ -478,6 +507,92 @@ export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = (
           >
             + SecurityAgent (Аудит)
           </button>
+        </div>
+      </div>
+
+      {/* User-Defined Labels / Tags Section */}
+      <div className="p-3 bg-neutral-950/80 border border-neutral-850 rounded-xl space-y-2.5">
+        <div className="flex items-center justify-between">
+          <h4 className="font-semibold text-neutral-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+            <Tag className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Пользовательские теги и метки ({card.tags?.length || 0}):</span>
+          </h4>
+          <span className="text-[10px] font-mono text-neutral-500">
+            Кастомные теги сохраняются в карточке
+          </span>
+        </div>
+
+        {/* List of active tags with remove buttons */}
+        <div className="flex flex-wrap items-center gap-1.5 min-h-[26px]">
+          {(!card.tags || card.tags.length === 0) ? (
+            <span className="text-neutral-500 text-[11px] italic">
+              Теги не назначены. Введите тег ниже или выберите из рекомендованных.
+            </span>
+          ) : (
+            card.tags.map((tag) => (
+              <span
+                key={tag}
+                className="group inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-medium bg-cyan-950/70 text-cyan-300 border border-cyan-800/80 hover:border-cyan-600 transition-colors shadow-xs"
+              >
+                <span>#{tag}</span>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveTag(tag)}
+                  className="text-neutral-400 hover:text-rose-400 p-0.5 rounded transition-colors cursor-pointer"
+                  title={`Удалить тег #${tag}`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))
+          )}
+        </div>
+
+        {/* Input to add custom tag */}
+        <div className="flex items-center gap-2 pt-1">
+          <div className="relative flex-1">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-500 font-mono text-xs">#</span>
+            <input
+              type="text"
+              value={newTagInput}
+              onChange={(e) => setNewTagInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddTag();
+                }
+              }}
+              placeholder="Добавить свой тег (например: release-2.4, hotfix, ui)..."
+              className="w-full pl-6 pr-3 py-1.5 bg-neutral-900 border border-neutral-800 focus:border-cyan-500 rounded-lg text-xs text-neutral-200 placeholder:text-neutral-500 outline-none font-mono"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => handleAddTag()}
+            disabled={!newTagInput.trim()}
+            className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:bg-neutral-800 disabled:text-neutral-600 text-white rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Добавить тег</span>
+          </button>
+        </div>
+
+        {/* Quick Suggestion Chips */}
+        <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+          <span className="text-[10px] font-mono text-neutral-500">Быстрые пресеты:</span>
+          {['security', 'perf', 'database', 'devops', 'architecture', 'frontend', 'urgent', 'cwe-95', 'rls']
+            .filter((s) => !card.tags?.includes(s))
+            .slice(0, 6)
+            .map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => handleAddTag(preset)}
+                className="text-[10px] font-mono px-2 py-0.5 bg-neutral-900 hover:bg-neutral-850 hover:border-cyan-700/60 border border-neutral-800 text-neutral-400 hover:text-cyan-300 rounded-md transition-colors cursor-pointer"
+              >
+                +{preset}
+              </button>
+            ))}
         </div>
       </div>
 

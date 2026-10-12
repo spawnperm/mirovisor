@@ -190,4 +190,41 @@ describe('useAppStore (Zustand Global State)', () => {
     store.deleteRlsPolicy('test_rls_new');
     expect(useAppStore.getState().rlsPolicies.some((p) => p.id === 'test_rls_new')).toBe(false);
   });
+
+  it('manages custom card tags (add, remove, set) with deduplication', () => {
+    const testCard: KanbanCard = {
+      id: 'c-tags-test',
+      title: 'Tags Test Card',
+      description: '',
+      type: 'security',
+      priority: 'high',
+      column: 'ideas',
+      source: '',
+      attachments: [],
+      checklist: [],
+      tags: ['init-tag'],
+      createdBy: 'TestAgent',
+      createdAt: '',
+      comments: [],
+    };
+
+    useAppStore.setState({ cards: [testCard] });
+    const store = useAppStore.getState();
+
+    // Add tag
+    store.addCardTag('c-tags-test', 'security-audit');
+    expect(useAppStore.getState().cards[0].tags).toContain('security-audit');
+
+    // Add duplicate tag (should not duplicate)
+    store.addCardTag('c-tags-test', 'SECURITY-AUDIT');
+    expect(useAppStore.getState().cards[0].tags?.filter((t) => t === 'security-audit').length).toBe(1);
+
+    // Remove tag
+    store.removeCardTag('c-tags-test', 'init-tag');
+    expect(useAppStore.getState().cards[0].tags).not.toContain('init-tag');
+
+    // Set batch tags
+    store.setCardTags('c-tags-test', ['frontend', 'perf', 'frontend']);
+    expect(useAppStore.getState().cards[0].tags).toEqual(['frontend', 'perf']);
+  });
 });

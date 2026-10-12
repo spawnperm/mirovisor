@@ -2,8 +2,12 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Mirovisor Gateway & Platform API",
-    "version": "1.0.0",
-    "description": "Multi-tenant API Gateway and Telemetry Contract for Mirovisor"
+    "version": "1.1.0",
+    "description": "Multi-tenant API Gateway, Kanban Lifecycle, and Telemetry Contracts for Mirovisor platform.",
+    "contact": {
+      "name": "Mirovisor Platform Engineering",
+      "url": "https://github.com/spawnperm/mirovisor"
+    }
   },
   "servers": [
     {
@@ -15,6 +19,7 @@
     "/healthz": {
       "get": {
         "summary": "Basic health check",
+        "operationId": "getHealth",
         "responses": {
           "200": { "description": "Service healthy" }
         }
@@ -23,6 +28,7 @@
     "/healthz/live": {
       "get": {
         "summary": "Kubernetes Liveness Probe",
+        "operationId": "getLiveness",
         "responses": {
           "200": { "description": "Process is running" }
         }
@@ -31,6 +37,7 @@
     "/healthz/ready": {
       "get": {
         "summary": "Kubernetes Readiness Probe",
+        "operationId": "getReadiness",
         "responses": {
           "200": { "description": "All downstream dependencies ready" }
         }
@@ -39,6 +46,7 @@
     "/metrics": {
       "get": {
         "summary": "Prometheus Metrics Scrape Endpoint",
+        "operationId": "getMetrics",
         "responses": {
           "200": {
             "description": "Prometheus text format",
@@ -50,6 +58,7 @@
     "/api/v1/tenants": {
       "get": {
         "summary": "List available tenants",
+        "operationId": "listTenants",
         "responses": {
           "200": {
             "description": "List of active tenants",
@@ -60,19 +69,224 @@
                   "properties": {
                     "data": {
                       "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": { "type": "string" },
-                          "name": { "type": "string" },
-                          "schema": { "type": "string" }
-                        }
-                      }
-                    }
+                      "items": { "$ref": "#/components/schemas/Tenant" }
+                    },
+                    "total": { "type": "integer" }
                   }
                 }
               }
             }
+          }
+        }
+      },
+      "post": {
+        "summary": "Register a new tenant",
+        "operationId": "createTenant",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Tenant" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Tenant created" },
+          "400": { "$ref": "#/components/responses/ProblemDetailsResponse" }
+        }
+      }
+    },
+    "/api/v1/kanban/cards": {
+      "get": {
+        "summary": "List Kanban cards",
+        "operationId": "listCards",
+        "responses": {
+          "200": {
+            "description": "List of cards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/KanbanCard" }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a Kanban card",
+        "operationId": "createCard",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/KanbanCard" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Card created" },
+          "400": { "$ref": "#/components/responses/ProblemDetailsResponse" }
+        }
+      }
+    },
+    "/api/v1/kanban/cards/{id}": {
+      "patch": {
+        "summary": "Partial card patch update",
+        "operationId": "patchCard",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CardPatch" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Card patched" },
+          "400": { "$ref": "#/components/responses/ProblemDetailsResponse" },
+          "404": { "$ref": "#/components/responses/ProblemDetailsResponse" }
+        }
+      }
+    },
+    "/api/v1/kanban/cards/{id}/tags": {
+      "put": {
+        "summary": "Synchronize user-defined labels/tags for a card",
+        "operationId": "updateCardTags",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CardTagUpdate" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tags successfully updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/KanbanCard" },
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ProblemDetailsResponse" },
+          "404": { "$ref": "#/components/responses/ProblemDetailsResponse" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Tenant": {
+        "type": "object",
+        "required": ["id", "name", "slug", "schema"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "slug": { "type": "string" },
+          "schema": { "type": "string" },
+          "tier": { "type": "string", "enum": ["holding", "division", "project", "sandbox"] },
+          "storageQuotaMb": { "type": "integer" },
+          "storageUsedMb": { "type": "integer" }
+        }
+      },
+      "KanbanCard": {
+        "type": "object",
+        "required": ["id", "columnId", "title", "description"],
+        "properties": {
+          "id": { "type": "string" },
+          "columnId": { "type": "string", "enum": ["incoming", "refinement", "ready_for_work", "in_progress", "review", "done"] },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "qualityRating": { "type": "number", "minimum": 1, "maximum": 5 },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "CardTagUpdate": {
+        "type": "object",
+        "required": ["tags"],
+        "properties": {
+          "tags": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 32 },
+            "maxItems": 20
+          }
+        }
+      },
+      "CardPatch": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "columnId": { "type": "string", "enum": ["incoming", "refinement", "ready_for_work", "in_progress", "review", "done"] },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 32 }
+          },
+          "qualityRating": { "type": "number", "minimum": 1, "maximum": 5 }
+        }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "required": ["type", "title", "status", "detail"],
+        "properties": {
+          "type": { "type": "string", "description": "URI identifying problem type" },
+          "title": { "type": "string" },
+          "status": { "type": "integer" },
+          "detail": { "type": "string" },
+          "instance": { "type": "string" },
+          "invalidParams": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "reason": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "ProblemDetailsResponse": {
+        "description": "RFC 7807 Problem Details Error",
+        "content": {
+          "application/problem+json": {
+            "schema": { "$ref": "#/components/schemas/ProblemDetails" }
           }
         }
       }

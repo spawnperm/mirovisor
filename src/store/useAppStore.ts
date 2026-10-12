@@ -18,6 +18,7 @@ import {
   RlsPolicy,
 } from '../types';
 import { LogUtility } from '../services/logUtility';
+import { OfflineStorage } from '../services/offlineStorageService';
 import { VoiceMacro } from '../types/macros';
 import { ConversationTurn, VoiceActionResult } from '../components/devtools/VoiceControlModal';
 import {
@@ -65,6 +66,9 @@ export interface AppState {
   addCard: (newCard: KanbanCard) => void;
   rateCard: (cardId: string, rating: number, feedback: string) => void;
   rollbackCard: (cardId: string, reason: string) => void;
+  addCardTag: (cardId: string, tag: string) => void;
+  removeCardTag: (cardId: string, tag: string) => void;
+  setCardTags: (cardId: string, tags: string[]) => void;
 
   // CI/CD Pipelines
   builds: PipelineBuild[];
@@ -366,8 +370,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  // Kanban Cards initial state
-  cards: INITIAL_KANBAN_CARDS,
+  // Kanban Cards initial state with localStorage persistence
+  cards: (() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('mirovisor_kanban_cards_v1');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch {}
+    }
+    return INITIAL_KANBAN_CARDS;
+  })(),
 
   moveCard: (cardId, targetCol, feedbackReason) => {
     const { cards } = get();
@@ -384,46 +399,73 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
-    set({
-      cards: cards.map((c) =>
-        c.id === cardId
-          ? {
-              ...c,
-              column: targetCol,
-              movedAt: new Date().toISOString(),
-              rejectionReason: feedbackReason || c.rejectionReason,
-            }
-          : c
-      ),
-    });
+    const nextCards = cards.map((c) =>
+      c.id === cardId
+        ? {
+            ...c,
+            column: targetCol,
+            movedAt: new Date().toISOString(),
+            rejectionReason: feedbackReason || c.rejectionReason,
+          }
+        : c
+    );
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('mirovisor_kanban_cards_v1', JSON.stringify(nextCards));
+      } catch {}
+    }
+    OfflineStorage.cacheCards(nextCards).catch(() => {});
+
+    set({ cards: nextCards });
     return true;
   },
 
   updateCard: (updatedCard) => {
-    set((state) => ({
-      cards: state.cards.map((c) => (c.id === updatedCard.id ? updatedCard : c)),
-    }));
+    set((state) => {
+      const nextCards = state.cards.map((c) => (c.id === updatedCard.id ? updatedCard : c));
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('mirovisor_kanban_cards_v1', JSON.stringify(nextCards));
+        } catch {}
+      }
+      OfflineStorage.cacheCards(nextCards).catch(() => {});
+      return { cards: nextCards };
+    });
   },
 
   addCard: (newCard) => {
-    set((state) => ({
-      cards: [newCard, ...state.cards],
-    }));
+    set((state) => {
+      const nextCards = [newCard, ...state.cards];
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('mirovisor_kanban_cards_v1', JSON.stringify(nextCards));
+        } catch {}
+      }
+      OfflineStorage.cacheCards(nextCards).catch(() => {});
+      return { cards: nextCards };
+    });
   },
 
   rateCard: (cardId, rating, feedback) => {
     const { cards } = get();
-    set({
-      cards: cards.map((c) =>
-        c.id === cardId
-          ? {
-              ...c,
-              userRating: rating,
-              ratingFeedback: feedback,
-            }
-          : c
-      ),
-    });
+    const nextCards = cards.map((c) =>
+      c.id === cardId
+        ? {
+            ...c,
+            userRating: rating,
+            ratingFeedback: feedback,
+          }
+        : c
+    );
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('mirovisor_kanban_cards_v1', JSON.stringify(nextCards));
+      } catch {}
+    }
+    OfflineStorage.cacheCards(nextCards).catch(() => {});
+    set({ cards: nextCards });
 
     const card = cards.find((c) => c.id === cardId);
     if (card) {
@@ -436,19 +478,25 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   rollbackCard: (cardId, reason) => {
     const { cards } = get();
-    set({
-      cards: cards.map((c) =>
-        c.id === cardId
-          ? {
-              ...c,
-              column: 'deferred',
-              rolledBack: true,
-              rollbackCommitHash: `rev_${Math.random().toString(36).substring(2, 9)}`,
-              rejectionReason: `ОТКАТ: ${reason}`,
-            }
-          : c
-      ),
-    });
+    const nextCards: KanbanCard[] = cards.map((c) =>
+      c.id === cardId
+        ? {
+            ...c,
+            column: 'deferred' as CardColumn,
+            rolledBack: true,
+            rollbackCommitHash: `rev_${Math.random().toString(36).substring(2, 9)}`,
+            rejectionReason: `ОТКАТ: ${reason}`,
+          }
+        : c
+    );
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('mirovisor_kanban_cards_v1', JSON.stringify(nextCards));
+      } catch {}
+    }
+    OfflineStorage.cacheCards(nextCards).catch(() => {});
+    set({ cards: nextCards });
 
     const card = cards.find((c) => c.id === cardId);
     if (card) {
@@ -457,6 +505,68 @@ export const useAppStore = create<AppState>((set, get) => ({
         `КРИТИЧЕСКИЙ ОТКАТ изменений кода для [${card.title}]. Причина: ${reason}`
       );
     }
+  },
+
+  addCardTag: (cardId, tag) => {
+    const trimmed = tag.trim().toLowerCase();
+    if (!trimmed) return;
+    set((state) => {
+      const nextCards = state.cards.map((c) => {
+        if (c.id === cardId) {
+          const currentTags = c.tags || [];
+          if (!currentTags.includes(trimmed)) {
+            return { ...c, tags: [...currentTags, trimmed] };
+          }
+        }
+        return c;
+      });
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('mirovisor_kanban_cards_v1', JSON.stringify(nextCards));
+        } catch {}
+      }
+      OfflineStorage.cacheCards(nextCards).catch(() => {});
+      return { cards: nextCards };
+    });
+  },
+
+  removeCardTag: (cardId, tag) => {
+    set((state) => {
+      const nextCards = state.cards.map((c) => {
+        if (c.id === cardId) {
+          const currentTags = c.tags || [];
+          return { ...c, tags: currentTags.filter((t) => t !== tag) };
+        }
+        return c;
+      });
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('mirovisor_kanban_cards_v1', JSON.stringify(nextCards));
+        } catch {}
+      }
+      OfflineStorage.cacheCards(nextCards).catch(() => {});
+      return { cards: nextCards };
+    });
+  },
+
+  setCardTags: (cardId, tags) => {
+    const cleanTags = tags.map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const uniqueTags = Array.from(new Set(cleanTags));
+    set((state) => {
+      const nextCards = state.cards.map((c) => {
+        if (c.id === cardId) {
+          return { ...c, tags: uniqueTags };
+        }
+        return c;
+      });
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('mirovisor_kanban_cards_v1', JSON.stringify(nextCards));
+        } catch {}
+      }
+      OfflineStorage.cacheCards(nextCards).catch(() => {});
+      return { cards: nextCards };
+    });
   },
 
   // CI/CD Builds

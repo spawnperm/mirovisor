@@ -30,7 +30,8 @@ import {
   Grid2x2,
   CalendarClock,
   Bot,
-  ShieldAlert
+  ShieldAlert,
+  Tag
 } from 'lucide-react';
 import { KanbanCard, CardColumn, CardType, CardPriority } from '../../types';
 import { AiAgentService } from '../../services/aiAgentService';
@@ -96,6 +97,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const [isSimulatingCiCd, setIsSimulatingCiCd] = useState<boolean>(false);
   const [filterType, setFilterType] = useState<string>('all');
   const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [filterTag, setFilterTag] = useState<string>('all');
   const [newCommentText, setNewCommentText] = useState<string>('');
   const [ratingModalCard, setRatingModalCard] = useState<KanbanCard | null>(null);
   const [starRating, setStarRating] = useState<number>(5);
@@ -276,13 +278,22 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     }
   };
 
+  const allAvailableTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    cards.forEach((c) => {
+      c.tags?.forEach((t) => tagSet.add(t));
+    });
+    return Array.from(tagSet).sort();
+  }, [cards]);
+
   const filteredCards = useMemo(() => {
     return cards.filter((card) => {
       const matchesType = filterType === 'all' || card.type === filterType;
       const matchesPriority = filterPriority === 'all' || card.priority === filterPriority;
-      return matchesType && matchesPriority;
+      const matchesTag = filterTag === 'all' || (card.tags && card.tags.includes(filterTag));
+      return matchesType && matchesPriority && matchesTag;
     });
-  }, [cards, filterType, filterPriority]);
+  }, [cards, filterType, filterPriority, filterTag]);
 
   const columns: { id: CardColumn; title: string; hint: string; color: string }[] = [
     { id: 'ideas', title: 'Идеи (Агенты)', hint: 'Предложения от Cordis LLM', color: 'border-purple-500/30' },
@@ -404,9 +415,23 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         </h4>
 
         {/* Source indicator */}
-        <div className="text-[10px] text-neutral-400 font-mono truncate mb-2">
+        <div className="text-[10px] text-neutral-400 font-mono truncate mb-1.5">
           {card.source}
         </div>
+
+        {/* User-defined tags / labels */}
+        {card.tags && card.tags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1 mb-2">
+            {card.tags.map((tag) => (
+              <span
+                key={tag}
+                className="px-1.5 py-0.5 rounded text-[9px] font-mono font-medium bg-cyan-950/60 text-cyan-300 border border-cyan-800/60"
+              >
+                #{tag}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Subtasks progress */}
         {totalChecks > 0 && (
@@ -647,6 +672,46 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               </button>
             ))}
           </div>
+
+          {allAvailableTags.length > 0 && (
+            <div className="flex items-center gap-1 border-l border-neutral-800 pl-3">
+              <span className="text-[11px] text-neutral-400 font-semibold uppercase flex items-center gap-1">
+                <Tag className="w-3 h-3 text-cyan-400" />
+                Тег:
+              </span>
+              <button
+                onClick={() => setFilterTag('all')}
+                className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
+                  filterTag === 'all' ? 'bg-neutral-800 text-white font-medium' : 'text-neutral-400 hover:text-neutral-300'
+                }`}
+              >
+                Все
+              </button>
+              {allAvailableTags.slice(0, 4).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setFilterTag(t)}
+                  className={`px-2 py-0.5 rounded text-[11px] font-mono transition-colors ${
+                    filterTag === t ? 'bg-cyan-900/80 text-cyan-200 border border-cyan-700/80 font-medium' : 'text-neutral-400 hover:text-cyan-300'
+                  }`}
+                >
+                  #{t}
+                </button>
+              ))}
+              {allAvailableTags.length > 4 && (
+                <select
+                  value={filterTag}
+                  onChange={(e) => setFilterTag(e.target.value)}
+                  className="bg-neutral-900 border border-neutral-800 rounded px-1.5 py-0.5 text-[11px] font-mono text-neutral-300 focus:outline-none"
+                >
+                  <option value="all">Все теги ({allAvailableTags.length})</option>
+                  {allAvailableTags.map((t) => (
+                    <option key={t} value={t}>#{t}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

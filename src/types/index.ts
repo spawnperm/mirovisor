@@ -112,6 +112,7 @@ export interface KanbanCard {
   sourceSnippet?: string;
   attachments: string[];
   checklist: ChecklistItem[];
+  tags?: string[];
   createdBy: string; // e.g. "SecurityAgent", "DevOpsAgent"
   assignedTo?: string;
   createdAt: string;

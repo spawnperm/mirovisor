@@ -49,6 +49,9 @@ export const selectKanbanState = (state: AppState) => ({
   addCard: state.addCard,
   rateCard: state.rateCard,
   rollbackCard: state.rollbackCard,
+  addCardTag: state.addCardTag,
+  removeCardTag: state.removeCardTag,
+  setCardTags: state.setCardTags,
 });
 
 export const selectPipelinesState = (state: AppState) => ({

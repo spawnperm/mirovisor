@@ -56,3 +56,43 @@ export const CloudEventSchema = z.object({
 });
 
 export type ValidatedCloudEvent = z.infer<typeof CloudEventSchema>;
+
+/**
+ * Custom Card Tags Update Contract
+ */
+export const CardTagUpdateSchema = z.object({
+  tags: z.array(z.string().trim().min(1).max(32)).max(20),
+});
+
+export type ValidatedCardTagUpdate = z.infer<typeof CardTagUpdateSchema>;
+
+/**
+ * Partial Card Patch Contract
+ */
+export const CardPatchSchema = z.object({
+  title: z.string().min(3).max(200).optional(),
+  description: z.string().max(10000).optional(),
+  columnId: z.enum(['incoming', 'refinement', 'ready_for_work', 'in_progress', 'review', 'done']).optional(),
+  tags: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
+  qualityRating: z.number().min(1).max(5).optional(),
+});
+
+export type ValidatedCardPatch = z.infer<typeof CardPatchSchema>;
+
+/**
+ * RFC 7807 Problem Details for HTTP APIs
+ */
+export const ProblemDetailsSchema = z.object({
+  type: z.string().url().or(z.string().startsWith('urn:')),
+  title: z.string(),
+  status: z.number().int().min(100).max(599),
+  detail: z.string(),
+  instance: z.string().optional(),
+  invalidParams: z.array(z.object({
+    name: z.string(),
+    reason: z.string(),
+  })).optional(),
+});
+
+export type ValidatedProblemDetails = z.infer<typeof ProblemDetailsSchema>;
+

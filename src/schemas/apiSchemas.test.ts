@@ -4,6 +4,8 @@ import {
   KanbanCardSchema,
   SecurityFindingSchema,
   CloudEventSchema,
+  CardTagUpdateSchema,
+  ProblemDetailsSchema,
 } from './api.schemas.ts';
 
 describe('API Runtime Validation Schemas (Zod)', () => {
@@ -79,5 +81,28 @@ describe('API Runtime Validation Schemas (Zod)', () => {
       tenantId: 't_holding',
     };
     expect(CloudEventSchema.safeParse(validEvent).success).toBe(true);
+  });
+
+  it('validates CardTagUpdateSchema constraints and sanitization', () => {
+    const validTags = { tags: ['perf', 'security-audit', 'cwe-89'] };
+    const parsed = CardTagUpdateSchema.safeParse(validTags);
+    expect(parsed.success).toBe(true);
+
+    const emptyTag = { tags: [''] };
+    expect(CardTagUpdateSchema.safeParse(emptyTag).success).toBe(false);
+
+    const tooManyTags = { tags: Array.from({ length: 25 }, (_, i) => `tag-${i}`) };
+    expect(CardTagUpdateSchema.safeParse(tooManyTags).success).toBe(false);
+  });
+
+  it('validates RFC 7807 ProblemDetailsSchema for HTTP error responses', () => {
+    const validProblem = {
+      type: 'urn:mirovisor:error:validation',
+      title: 'Bad Request',
+      status: 400,
+      detail: 'The payload contains invalid parameters.',
+      invalidParams: [{ name: 'tags', reason: 'Must contain non-empty string tags' }],
+    };
+    expect(ProblemDetailsSchema.safeParse(validProblem).success).toBe(true);
   });
 });
