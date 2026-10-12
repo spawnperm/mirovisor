@@ -1,15 +1,19 @@
 {
-  "name": "react-example",
+  "name": "mirovisor",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Multi-tenant interactive data visualization and engineering evolution platform",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
+    "build:server": "esbuild server.ts --bundle --platform=node --target=node20 --format=esm --packages=external --outfile=server.mjs",
+    "build:all": "npm run build && npm run build:server",
     "postbuild": "node scripts/auto-commit-on-build.mjs",
-    "build:commit": "npm run test && npm run build",
+    "build:commit": "npm run test && npm run build:all",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
+    "start": "node server.mjs",
+    "clean": "rm -rf dist server.mjs",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"

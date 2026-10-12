@@ -1,0 +1,81 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Mirovisor Gateway & Platform API",
+    "version": "1.0.0",
+    "description": "Multi-tenant API Gateway and Telemetry Contract for Mirovisor"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local Development / Portal Gateway"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Basic health check",
+        "responses": {
+          "200": { "description": "Service healthy" }
+        }
+      }
+    },
+    "/healthz/live": {
+      "get": {
+        "summary": "Kubernetes Liveness Probe",
+        "responses": {
+          "200": { "description": "Process is running" }
+        }
+      }
+    },
+    "/healthz/ready": {
+      "get": {
+        "summary": "Kubernetes Readiness Probe",
+        "responses": {
+          "200": { "description": "All downstream dependencies ready" }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Prometheus Metrics Scrape Endpoint",
+        "responses": {
+          "200": {
+            "description": "Prometheus text format",
+            "content": { "text/plain": {} }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants": {
+      "get": {
+        "summary": "List available tenants",
+        "responses": {
+          "200": {
+            "description": "List of active tenants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "name": { "type": "string" },
+                          "schema": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
