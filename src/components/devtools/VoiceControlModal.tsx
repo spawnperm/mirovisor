@@ -24,6 +24,9 @@ import {
 } from 'lucide-react';
 import { Tenant } from '../../types';
 import { AiAgentService } from '../../services/aiAgentService';
+import { VoiceInteractionLog } from './VoiceInteractionLog';
+
+export { VoiceInteractionLog };
 
 export interface VoiceActionResult {
   intent: string;
@@ -78,7 +81,6 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
     return AiAgentService.getInstance().getVoiceConversationHistory();
   });
 
-  const chatBottomRef = useRef<HTMLDivElement>(null);
   const speechTimerRef = useRef<number | null>(null);
   const progressTimerRef = useRef<number | null>(null);
   const speechSynthRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -89,11 +91,6 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
   useEffect(() => {
     isSpeakingRef.current = isSpeaking;
   }, [isSpeaking]);
-
-  // Auto-scroll chat history
-  useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [conversationMemory, isSpeaking]);
 
   // =========================================================================
   // BARGE-IN INTERRUPTION MECHANISM
@@ -630,80 +627,14 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
           )}
         </div>
 
-        {/* Conversation Dialog Area with Full Memory Array */}
-        <div className="p-4 overflow-y-auto max-h-56 min-h-[160px] bg-neutral-950/40 space-y-3 font-sans text-xs custom-scrollbar">
-          <div className="flex items-center justify-between text-[11px] font-mono text-neutral-500 border-b border-neutral-850 pb-1.5">
-            <span className="flex items-center gap-1.5 text-cyan-400">
-              <MessageSquare className="w-3.5 h-3.5" />
-              ПАМЯТЬ СЕССИИ ({conversationMemory.length} реплик в контексте):
-            </span>
-            <div className="flex items-center gap-2 text-[10px] text-neutral-400">
-              <span className="flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                Контекст сохраняется
-              </span>
-            </div>
-          </div>
-
-          {conversationMemory.length === 0 ? (
-            <div className="py-6 text-center text-neutral-500 text-xs">
-              История диалога пуста. Скажите команду или выберите быстрый интент ниже.
-            </div>
-          ) : (
-            conversationMemory.map((turn) => (
-              <div
-                key={turn.id}
-                className={`p-3 rounded-2xl border transition-all ${
-                  turn.role === 'user'
-                    ? 'bg-neutral-800/90 border-cyan-800/60 ml-8 text-neutral-100 shadow-xs'
-                    : 'bg-neutral-900/90 border-neutral-800 mr-8 text-neutral-200 shadow-sm'
-                } ${turn.interrupted ? 'border-amber-500/80 bg-amber-950/30' : ''}`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold flex items-center gap-1.5">
-                    {turn.role === 'user' ? (
-                      <>
-                        <span className="text-cyan-400 font-mono">Вы (Суперадмин)</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                        <span className="text-purple-300 font-mono">Голосовой агент портала</span>
-                      </>
-                    )}
-                  </span>
-                  <div className="flex items-center gap-2 text-[10px] text-neutral-500 font-mono">
-                    {turn.interrupted && (
-                      <span className="text-amber-400 px-1.5 py-0.2 rounded bg-amber-950/80 border border-amber-800 flex items-center gap-0.5">
-                        <Zap className="w-2.5 h-2.5" /> Прервано
-                      </span>
-                    )}
-                    <span>{turn.timestamp}</span>
-                  </div>
-                </div>
-
-                <p className="text-xs leading-relaxed">{turn.text}</p>
-
-                {turn.actionResult && (
-                  <div className={`mt-2 p-1.5 px-2.5 rounded-lg text-[11px] font-mono flex items-center justify-between ${
-                    turn.interrupted
-                      ? 'bg-amber-950/70 text-amber-200 border border-amber-700/80'
-                      : 'bg-neutral-950/70 text-cyan-300 border border-neutral-800'
-                  }`}>
-                    <span className="truncate">{turn.actionResult}</span>
-                    {turn.interrupted ? (
-                      <Zap className="w-3 h-3 text-amber-400 shrink-0 ml-1.5" />
-                    ) : turn.affectedEntity ? (
-                      <span className="text-[10px] text-neutral-400 shrink-0 ml-1.5 font-mono">
-                        [{turn.affectedEntity}]
-                      </span>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-          <div ref={chatBottomRef} />
+        {/* Conversation Dialog Area: VoiceInteractionLog */}
+        <div className="p-4 bg-neutral-950/40">
+          <VoiceInteractionLog
+            turns={conversationMemory}
+            isSpeaking={isSpeaking}
+            onReplayCommand={(cmd) => handleProcessVoiceInput(cmd)}
+            onInterrupt={handleInterrupt}
+          />
         </div>
 
         {/* Quick Voice Programming & Context Chips */}
