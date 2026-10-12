@@ -298,3 +298,14 @@ export interface ResourceUtilizationPoint {
   bandwidthMbps: number;
 }
 
+export interface HistoricalTrendPoint {
+  timestamp: string;
+  dateLabel: string;
+  storageUsedGb: number;
+  storageQuotaGb: number;
+  apiRps: number;
+  storageTrendGb?: number;
+  rpsTrend?: number;
+  growthRatePct?: number;
+}
+

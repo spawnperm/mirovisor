@@ -18,6 +18,7 @@ import {
   Info
 } from 'lucide-react';
 import { VoiceMacro, MacroAction, MacroActionType } from '../../types/macros';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 export interface MacroRegistryModalProps {
   isOpen: boolean;
@@ -95,6 +96,11 @@ export const MacroRegistryModal: React.FC<MacroRegistryModalProps> = ({
   ]);
   const [executedMacroId, setExecutedMacroId] = useState<string | null>(null);
 
+  const { containerRef } = useFocusTrap({
+    isOpen,
+    onClose,
+  });
+
   if (!isOpen) return null;
 
   const filteredMacros = macros.filter((m) => {
@@ -161,8 +167,17 @@ export const MacroRegistryModal: React.FC<MacroRegistryModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-3xl flex flex-col shadow-2xl overflow-hidden max-h-[90vh]">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Реестр голосовых макросов"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
+    >
+      <div
+        ref={containerRef}
+        tabIndex={-1}
+        className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-3xl flex flex-col shadow-2xl overflow-hidden max-h-[90vh] focus:outline-none"
+      >
         {/* Header */}
         <div className="p-4 px-6 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/70">
           <div className="flex items-center gap-3">

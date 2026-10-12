@@ -67,4 +67,63 @@ describe('MirovisorCollaborativeProvider (CRDT & WebRTC)', () => {
 
     expect(textB.toString()).toBe('Рефакторинг PostgreSQL Schemas');
   });
+
+  it('resolves concurrent CRDT text edits deterministically without divergence', () => {
+    const textA = docA.getText('description');
+    const textB = docB.getText('description');
+
+    // Initial synchronized baseline
+    textA.insert(0, 'План: ');
+    Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA));
+
+    // Peer A adds step 1
+    textA.insert(6, '1. Настроить RLS. ');
+
+    // Peer B concurrently adds step 2
+    textB.insert(6, '2. Проверить индексы. ');
+
+    // Bidirectional sync
+    const updateAtoB = Y.encodeStateAsUpdate(docA);
+    const updateBtoA = Y.encodeStateAsUpdate(docB);
+
+    Y.applyUpdate(docB, updateAtoB);
+    Y.applyUpdate(docA, updateBtoA);
+
+    // Both documents must converge to the exact same text
+    expect(textA.toString()).toBe(textB.toString());
+    expect(textA.toString()).toContain('Настроить RLS');
+    expect(textA.toString()).toContain('Проверить индексы');
+  });
+
+  it('synchronizes Y.Map metadata for Kanban cards', () => {
+    const cardMapA = docA.getMap('card-meta-101');
+    const cardMapB = docB.getMap('card-meta-101');
+
+    cardMapA.set('column', 'in_progress');
+    cardMapA.set('priority', 'critical');
+    cardMapA.set('assignee', 'DevOps Agent');
+
+    Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA));
+
+    expect(cardMapB.get('column')).toBe('in_progress');
+    expect(cardMapB.get('priority')).toBe('critical');
+    expect(cardMapB.get('assignee')).toBe('DevOps Agent');
+  });
+
+  it('properly cleans up awareness and state on provider destroy', () => {
+    providerA = new MirovisorCollaborativeProvider({
+      roomName: 'tenant-test-room-destroy',
+      doc: docA,
+      user: {
+        id: 'usr-002',
+        name: 'Инженер QA',
+        color: '#10b981',
+        role: 'Developer',
+      },
+    });
+
+    expect(providerA.peers.size).toBeGreaterThanOrEqual(1);
+    providerA.destroy();
+    expect(providerA.peers.size).toBe(0);
+  });
 });

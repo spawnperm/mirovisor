@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Sparkles,
   Play,
@@ -19,11 +19,19 @@ import {
   MessageSquare,
   ExternalLink,
   ChevronRight,
-  Plus
+  ChevronDown,
+  Plus,
+  LayoutGrid,
+  Rows3,
+  Users2,
+  FolderOpen,
+  FolderClosed,
+  X
 } from 'lucide-react';
 import { KanbanCard, CardColumn, CardType, CardPriority } from '../../types';
 import { AiAgentService } from '../../services/aiAgentService';
 import { CollaborativeCardEditor } from './CollaborativeCardEditor';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface KanbanBoardProps {
   cards: KanbanCard[];
@@ -36,6 +44,16 @@ interface KanbanBoardProps {
 
 const WIP_LIMIT_IN_PROGRESS = 3;
 
+export type SwimlaneMode = 'none' | 'priority' | 'team';
+
+interface SwimlaneDef {
+  id: string;
+  title: string;
+  badge: string;
+  color: string;
+  icon: React.ReactNode;
+}
+
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   cards,
   onUpdateCard,
@@ -44,6 +62,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   onRollbackCard,
   onRateCard,
 }) => {
+  const [swimlaneMode, setSwimlaneMode] = useState<SwimlaneMode>('none');
+  const [collapsedSwimlanes, setCollapsedSwimlanes] = useState<Set<string>>(new Set());
+
   const [selectedCard, setSelectedCard] = useState<KanbanCard | null>(null);
   const [rejectModalCard, setRejectModalCard] = useState<{ card: KanbanCard; targetCol: CardColumn } | null>(null);
   const [rejectReason, setRejectReason] = useState<string>('Несогласен с приоритетом');
@@ -56,13 +77,57 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const [starRating, setStarRating] = useState<number>(5);
   const [ratingFeedback, setRatingFeedback] = useState<string>('');
 
+  // WCAG 2.1 AA focus traps for interactive modals
+  const { containerRef: detailModalRef } = useFocusTrap({
+    isOpen: !!selectedCard,
+    onClose: () => setSelectedCard(null),
+  });
+
+  const { containerRef: rejectModalRef } = useFocusTrap({
+    isOpen: !!rejectModalCard,
+    onClose: () => setRejectModalCard(null),
+  });
+
+  const { containerRef: ratingModalRef } = useFocusTrap({
+    isOpen: !!ratingModalCard,
+    onClose: () => setRatingModalCard(null),
+  });
+
   const inProgressCount = cards.filter((c) => c.column === 'in_progress').length;
+
+  const toggleSwimlaneCollapse = (swimlaneId: string) => {
+    setCollapsedSwimlanes((prev) => {
+      const next = new Set(prev);
+      if (next.has(swimlaneId)) {
+        next.delete(swimlaneId);
+      } else {
+        next.add(swimlaneId);
+      }
+      return next;
+    });
+  };
+
+  const collapseAllSwimlanes = () => {
+    if (swimlaneMode === 'priority') {
+      setCollapsedSwimlanes(new Set(['critical', 'high', 'medium', 'low']));
+    } else if (swimlaneMode === 'team') {
+      setCollapsedSwimlanes(new Set(['security', 'architecture', 'testing', 'devops', 'ux', 'docs']));
+    }
+  };
+
+  const expandAllSwimlanes = () => {
+    setCollapsedSwimlanes(new Set());
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
   };
 
-  const handleDrop = (e: React.DragEvent, targetCol: CardColumn) => {
+  const handleDrop = (
+    e: React.DragEvent,
+    targetCol: CardColumn,
+    targetSwimlaneId?: string
+  ) => {
     e.preventDefault();
     const cardId = e.dataTransfer.getData('text/plain');
     const card = cards.find((c) => c.id === cardId);
@@ -74,8 +139,29 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     }
 
     if (targetCol === 'in_progress' && card.column !== 'in_progress' && inProgressCount >= WIP_LIMIT_IN_PROGRESS) {
-      alert(`Внимание! Превышен WIP-лимит: в колонке «В работу» не может быть более ${WIP_LIMIT_IN_PROGRESS} задач одновременно! Сначала завершите текущие задачи.`);
+      alert(
+        `Внимание! Превышен WIP-лимит: в колонке «В работу» не может быть более ${WIP_LIMIT_IN_PROGRESS} задач одновременно! Сначала завершите текущие задачи.`
+      );
       return;
+    }
+
+    // Auto-update card priority or team type if dropped into a swimlane
+    if (targetSwimlaneId) {
+      if (swimlaneMode === 'priority' && card.priority !== targetSwimlaneId) {
+        onUpdateCard({
+          ...card,
+          priority: targetSwimlaneId as CardPriority,
+          column: targetCol,
+        });
+        return;
+      } else if (swimlaneMode === 'team' && card.type !== targetSwimlaneId) {
+        onUpdateCard({
+          ...card,
+          type: targetSwimlaneId as CardType,
+          column: targetCol,
+        });
+        return;
+      }
     }
 
     onMoveCard(cardId, targetCol);
@@ -128,15 +214,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     setNewCommentText('');
   };
 
-  const toggleChecklistItem = (itemIndex: number) => {
-    if (!selectedCard) return;
-    const newChecklist = [...selectedCard.checklist];
-    newChecklist[itemIndex].done = !newChecklist[itemIndex].done;
-    const updated = { ...selectedCard, checklist: newChecklist };
-    onUpdateCard(updated);
-    setSelectedCard(updated);
-  };
-
   const getTypeIcon = (type: CardType) => {
     switch (type) {
       case 'security':
@@ -154,11 +231,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     }
   };
 
-  const filteredCards = cards.filter((card) => {
-    const matchesType = filterType === 'all' || card.type === filterType;
-    const matchesPriority = filterPriority === 'all' || card.priority === filterPriority;
-    return matchesType && matchesPriority;
-  });
+  const filteredCards = useMemo(() => {
+    return cards.filter((card) => {
+      const matchesType = filterType === 'all' || card.type === filterType;
+      const matchesPriority = filterPriority === 'all' || card.priority === filterPriority;
+      return matchesType && matchesPriority;
+    });
+  }, [cards, filterType, filterPriority]);
 
   const columns: { id: CardColumn; title: string; hint: string; color: string }[] = [
     { id: 'ideas', title: 'Идеи (Агенты)', hint: 'Предложения от Cordis LLM', color: 'border-purple-500/30' },
@@ -167,10 +246,175 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     { id: 'deferred', title: 'Отложено', hint: 'Обратная связь зафиксирована', color: 'border-neutral-700' },
   ];
 
+  // Swimlanes definitions
+  const prioritySwimlanes: SwimlaneDef[] = [
+    {
+      id: 'critical',
+      title: 'Критический приоритет (Critical / Blocker)',
+      badge: 'P0 · Critical',
+      color: 'border-rose-500/40 text-rose-400 bg-rose-950/20',
+      icon: <Shield className="w-4 h-4 text-rose-400" />,
+    },
+    {
+      id: 'high',
+      title: 'Высокий приоритет (High)',
+      badge: 'P1 · High',
+      color: 'border-amber-500/40 text-amber-400 bg-amber-950/20',
+      icon: <AlertCircle className="w-4 h-4 text-amber-400" />,
+    },
+    {
+      id: 'medium',
+      title: 'Средний приоритет (Medium)',
+      badge: 'P2 · Medium',
+      color: 'border-cyan-500/40 text-cyan-400 bg-cyan-950/20',
+      icon: <Layers className="w-4 h-4 text-cyan-400" />,
+    },
+    {
+      id: 'low',
+      title: 'Низкий приоритет (Low)',
+      badge: 'P3 · Low',
+      color: 'border-neutral-700 text-neutral-400 bg-neutral-900/40',
+      icon: <Clock className="w-4 h-4 text-neutral-400" />,
+    },
+  ];
+
+  const teamSwimlanes: SwimlaneDef[] = [
+    {
+      id: 'security',
+      title: 'AppSec & Security Gate (Безопасность / SAST)',
+      badge: 'AppSec Team',
+      color: 'border-rose-500/40 text-rose-400 bg-rose-950/20',
+      icon: <Shield className="w-4 h-4 text-rose-400" />,
+    },
+    {
+      id: 'architecture',
+      title: 'Комитет Архитектуры & Ядро (RLS / Schema-per-Tenant)',
+      badge: 'Platform Core',
+      color: 'border-indigo-500/40 text-indigo-400 bg-indigo-950/20',
+      icon: <Layers className="w-4 h-4 text-indigo-400" />,
+    },
+    {
+      id: 'testing',
+      title: 'Тестирование & Надежность (Testcontainers / QA)',
+      badge: 'QA Automation',
+      color: 'border-emerald-500/40 text-emerald-400 bg-emerald-950/20',
+      icon: <FlaskConical className="w-4 h-4 text-emerald-400" />,
+    },
+    {
+      id: 'devops',
+      title: 'DevOps & CI/CD (Инфраструктура & NATS JetStream)',
+      badge: 'SRE / DevOps',
+      color: 'border-amber-500/40 text-amber-400 bg-amber-950/20',
+      icon: <Terminal className="w-4 h-4 text-amber-400" />,
+    },
+    {
+      id: 'ux',
+      title: 'UI/UX & Продуктовый Дизайн (WCAG 2.1 AA / UX)',
+      badge: 'Design System',
+      color: 'border-sky-500/40 text-sky-400 bg-sky-950/20',
+      icon: <Palette className="w-4 h-4 text-sky-400" />,
+    },
+    {
+      id: 'docs',
+      title: 'Техническая Документация & ADR (LLM Wiki)',
+      badge: 'Compliance & Docs',
+      color: 'border-purple-500/40 text-purple-400 bg-purple-950/20',
+      icon: <FileText className="w-4 h-4 text-purple-400" />,
+    },
+  ];
+
+  const activeSwimlanes = swimlaneMode === 'priority' ? prioritySwimlanes : swimlaneMode === 'team' ? teamSwimlanes : [];
+
+  // Helper to render a card element
+  const renderCardItem = (card: KanbanCard) => {
+    const doneChecks = card.checklist.filter((i) => i.done).length;
+    const totalChecks = card.checklist.length;
+
+    return (
+      <div
+        key={card.id}
+        draggable
+        onDragStart={(e) => e.dataTransfer.setData('text/plain', card.id)}
+        onClick={() => setSelectedCard(card)}
+        className={`p-3 rounded-lg border transition-all cursor-pointer hover:border-neutral-600 bg-neutral-950/90 shadow-md ${
+          card.priority === 'critical'
+            ? 'border-l-4 border-l-rose-500'
+            : card.priority === 'high'
+            ? 'border-l-4 border-l-amber-500'
+            : 'border-l-4 border-l-cyan-500'
+        }`}
+      >
+        {/* Kicker / Type & Priority */}
+        <div className="flex items-center justify-between text-[10px] text-neutral-400 mb-1.5">
+          <span className="flex items-center gap-1 font-mono uppercase">
+            {getTypeIcon(card.type)}
+            {card.type}
+          </span>
+          <span className="font-mono text-neutral-400 font-semibold">{card.createdBy.split(' ')[0]}</span>
+        </div>
+
+        {/* Title */}
+        <h4 className="text-xs font-semibold text-neutral-100 line-clamp-2 mb-1.5 leading-snug">
+          {card.title}
+        </h4>
+
+        {/* Source indicator */}
+        <div className="text-[10px] text-neutral-400 font-mono truncate mb-2">
+          {card.source}
+        </div>
+
+        {/* Subtasks progress */}
+        {totalChecks > 0 && (
+          <div className="flex items-center justify-between text-[10px] text-neutral-400 mb-2 bg-neutral-900/60 px-2 py-1 rounded">
+            <span className="flex items-center gap-1">
+              <CheckSquare className="w-3 h-3 text-cyan-400" />
+              Чек-лист
+            </span>
+            <span className="font-mono">
+              {doneChecks}/{totalChecks}
+            </span>
+          </div>
+        )}
+
+        {/* Bottom Meta & Rating */}
+        <div className="flex items-center justify-between pt-1.5 border-t border-neutral-800/80 text-[10px] text-neutral-400">
+          {card.comments.length > 0 ? (
+            <span className="flex items-center gap-1">
+              <MessageSquare className="w-3 h-3" />
+              {card.comments.length}
+            </span>
+          ) : (
+            <span />
+          )}
+
+          {card.rolledBack && (
+            <span className="font-mono text-rose-400 font-bold flex items-center gap-1">
+              <RotateCcw className="w-2.5 h-2.5" />
+              Откачено
+            </span>
+          )}
+
+          {card.userRating && (
+            <span className="flex items-center gap-0.5 text-amber-400 font-mono">
+              <Star className="w-2.5 h-2.5 fill-current" />
+              {card.userRating}/5
+            </span>
+          )}
+
+          {card.column === 'ideas' && (
+            <span className="text-cyan-400 flex items-center gap-0.5 hover:underline">
+              Решение <ChevronRight className="w-3 h-3" />
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="flex flex-col h-full bg-neutral-950 p-4 gap-4">
+    <div className="flex flex-col h-full bg-neutral-950 p-4 gap-4 overflow-hidden">
       {/* Top Header & CI/CD trigger */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-neutral-900/80 p-3 rounded-xl border border-neutral-800">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-neutral-900/80 p-3 rounded-xl border border-neutral-800 shrink-0 shadow-sm">
         <div>
           <h2 className="text-base font-bold text-white flex items-center gap-2">
             КАНБАН-ДОСКА ЭВОЛЮЦИИ «ИДЕИ → РАБОТА»
@@ -181,7 +425,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
           <div className="text-xs text-neutral-400 flex items-center gap-2 mt-0.5">
             <span>
               WIP в работе:{' '}
-              <strong className={inProgressCount >= WIP_LIMIT_IN_PROGRESS ? 'text-amber-400' : 'text-cyan-400'}>
+              <strong className={inProgressCount >= WIP_LIMIT_IN_PROGRESS ? 'text-amber-400 font-mono font-bold' : 'text-cyan-400 font-mono font-bold'}>
                 {inProgressCount} / {WIP_LIMIT_IN_PROGRESS}
               </strong>
             </span>
@@ -229,171 +473,275 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         </div>
       </div>
 
-      {/* Filter bar */}
-      <div className="flex items-center gap-3 text-xs text-neutral-400 px-1">
-        <span className="font-semibold text-neutral-500 text-[11px] uppercase">Фильтр:</span>
-        <div className="flex items-center gap-1">
-          {['all', 'security', 'architecture', 'testing', 'devops', 'ux', 'docs'].map((type) => (
+      {/* Swimlane Mode Selector & Filters Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-neutral-900/50 p-2.5 rounded-xl border border-neutral-800 shrink-0 text-xs">
+        {/* Horizontal Swimlanes Mode Switcher */}
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-neutral-400 text-[11px] uppercase tracking-wider flex items-center gap-1">
+            <Rows3 className="w-3.5 h-3.5 text-cyan-400" />
+            Свимлейны:
+          </span>
+          <div className="flex items-center gap-1 bg-neutral-950 p-1 rounded-lg border border-neutral-800">
             <button
-              key={type}
-              onClick={() => setFilterType(type)}
-              className={`px-2.5 py-1 rounded transition-colors ${
-                filterType === type ? 'bg-neutral-800 text-white font-medium' : 'hover:text-neutral-200'
+              onClick={() => setSwimlaneMode('none')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors ${
+                swimlaneMode === 'none'
+                  ? 'bg-neutral-800 text-white font-bold shadow-xs'
+                  : 'text-neutral-400 hover:text-white'
               }`}
             >
-              {type === 'all' ? 'Все типы' : type}
+              <LayoutGrid className="w-3.5 h-3.5" />
+              Стандартная доска
             </button>
-          ))}
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-[11px] text-neutral-500">Приоритет:</span>
-          {['all', 'critical', 'high', 'medium', 'low'].map((p) => (
+
             <button
-              key={p}
-              onClick={() => setFilterPriority(p)}
-              className={`px-2 py-0.5 rounded text-[11px] ${
-                filterPriority === p ? 'bg-neutral-800 text-white font-medium' : 'text-neutral-500 hover:text-neutral-300'
+              onClick={() => setSwimlaneMode('priority')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors ${
+                swimlaneMode === 'priority'
+                  ? 'bg-cyan-600 text-white font-bold shadow-xs'
+                  : 'text-neutral-400 hover:text-white'
               }`}
             >
-              {p}
+              <Shield className="w-3.5 h-3.5 text-amber-300" />
+              По приоритетам (P0–P3)
             </button>
-          ))}
-        </div>
-      </div>
 
-      {/* Columns Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 flex-1 overflow-x-auto min-h-[500px]">
-        {columns.map((col) => {
-          const colCards = filteredCards.filter((c) => c.column === col.id);
-          const isAtWipLimit = col.id === 'in_progress' && colCards.length >= WIP_LIMIT_IN_PROGRESS;
-
-          return (
-            <div
-              key={col.id}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, col.id)}
-              className={`flex flex-col bg-neutral-900/50 rounded-xl border ${col.color} p-3 min-w-[280px] shadow-sm`}
+            <button
+              onClick={() => setSwimlaneMode('team')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors ${
+                swimlaneMode === 'team'
+                  ? 'bg-purple-600 text-white font-bold shadow-xs'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
             >
-              {/* Column Header */}
-              <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-neutral-800">
-                <div>
-                  <h3 className="text-xs font-bold text-white flex items-center gap-2">
-                    {col.title}
-                    <span className="text-[10px] font-mono text-neutral-400 px-1.5 py-0.5 bg-neutral-800 rounded">
-                      {colCards.length}
-                    </span>
-                  </h3>
-                  <span className="text-[10px] text-neutral-500 block">{col.hint}</span>
-                </div>
-                {isAtWipLimit && (
-                  <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                    WIP LIMIT
-                  </span>
-                )}
-              </div>
+              <Users2 className="w-3.5 h-3.5 text-purple-200" />
+              По командам / Агентам
+            </button>
+          </div>
 
-              {/* Card List */}
-              <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-                {colCards.length === 0 ? (
-                  <div className="h-28 flex items-center justify-center border border-dashed border-neutral-800 rounded-lg text-neutral-600 text-xs text-center p-3">
-                    Перетащите карточки сюда
-                  </div>
-                ) : (
-                  colCards.map((card) => {
-                    const doneChecks = card.checklist.filter((i) => i.done).length;
-                    const totalChecks = card.checklist.length;
-
-                    return (
-                      <div
-                        key={card.id}
-                        draggable
-                        onDragStart={(e) => e.dataTransfer.setData('text/plain', card.id)}
-                        onClick={() => setSelectedCard(card)}
-                        className={`p-3 rounded-lg border transition-all cursor-pointer hover:border-neutral-700 bg-neutral-950/90 shadow-md ${
-                          card.priority === 'critical'
-                            ? 'border-l-4 border-l-rose-500'
-                            : card.priority === 'high'
-                            ? 'border-l-4 border-l-amber-500'
-                            : 'border-l-4 border-l-cyan-500'
-                        }`}
-                      >
-                        {/* Kicker / Type & Priority */}
-                        <div className="flex items-center justify-between text-[10px] text-neutral-400 mb-1.5">
-                          <span className="flex items-center gap-1 font-mono uppercase">
-                            {getTypeIcon(card.type)}
-                            {card.type}
-                          </span>
-                          <span className="font-mono text-neutral-500">{card.createdBy.split(' ')[0]}</span>
-                        </div>
-
-                        {/* Title */}
-                        <h4 className="text-xs font-semibold text-neutral-100 line-clamp-2 mb-1.5 leading-snug">
-                          {card.title}
-                        </h4>
-
-                        {/* Source indicator */}
-                        <div className="text-[10px] text-neutral-500 font-mono truncate mb-2">
-                          {card.source}
-                        </div>
-
-                        {/* Subtasks progress */}
-                        {totalChecks > 0 && (
-                          <div className="flex items-center justify-between text-[10px] text-neutral-400 mb-2 bg-neutral-900/60 px-2 py-1 rounded">
-                            <span className="flex items-center gap-1">
-                              <CheckSquare className="w-3 h-3 text-cyan-400" />
-                              Чек-лист
-                            </span>
-                            <span className="font-mono">
-                              {doneChecks}/{totalChecks}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Bottom Meta & Rating */}
-                        <div className="flex items-center justify-between pt-1.5 border-t border-neutral-800/80 text-[10px] text-neutral-400">
-                          {card.comments.length > 0 ? (
-                            <span className="flex items-center gap-1">
-                              <MessageSquare className="w-3 h-3" />
-                              {card.comments.length}
-                            </span>
-                          ) : (
-                            <span />
-                          )}
-
-                          {card.rolledBack && (
-                            <span className="font-mono text-rose-400 font-bold flex items-center gap-1">
-                              <RotateCcw className="w-2.5 h-2.5" />
-                              Откачено
-                            </span>
-                          )}
-
-                          {card.userRating && (
-                            <span className="flex items-center gap-0.5 text-amber-400 font-mono">
-                              <Star className="w-2.5 h-2.5 fill-current" />
-                              {card.userRating}/5
-                            </span>
-                          )}
-
-                          {card.column === 'ideas' && (
-                            <span className="text-cyan-400 flex items-center gap-0.5 hover:underline">
-                              Решение <ChevronRight className="w-3 h-3" />
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+          {swimlaneMode !== 'none' && (
+            <div className="flex items-center gap-1 ml-2 text-[11px] font-mono text-neutral-400">
+              <button
+                onClick={expandAllSwimlanes}
+                className="px-2 py-1 rounded bg-neutral-950 hover:bg-neutral-800 text-neutral-300 border border-neutral-800"
+                title="Развернуть все свимлейны"
+              >
+                Развернуть все
+              </button>
+              <button
+                onClick={collapseAllSwimlanes}
+                className="px-2 py-1 rounded bg-neutral-950 hover:bg-neutral-800 text-neutral-300 border border-neutral-800"
+                title="Свернуть все свимлейны"
+              >
+                Свернуть все
+              </button>
             </div>
-          );
-        })}
+          )}
+        </div>
+
+        {/* Filters */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
+            <span className="font-semibold text-neutral-400 text-[11px] uppercase">Тип:</span>
+            {['all', 'security', 'architecture', 'testing', 'devops', 'ux', 'docs'].map((type) => (
+              <button
+                key={type}
+                onClick={() => setFilterType(type)}
+                className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+                  filterType === type ? 'bg-neutral-800 text-white font-medium' : 'text-neutral-400 hover:text-neutral-200'
+                }`}
+              >
+                {type === 'all' ? 'Все' : type}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1 border-l border-neutral-800 pl-3">
+            <span className="text-[11px] text-neutral-400 font-semibold uppercase">Приоритет:</span>
+            {['all', 'critical', 'high', 'medium', 'low'].map((p) => (
+              <button
+                key={p}
+                onClick={() => setFilterPriority(p)}
+                className={`px-2 py-0.5 rounded text-[11px] font-mono ${
+                  filterPriority === p ? 'bg-neutral-800 text-white font-medium' : 'text-neutral-400 hover:text-neutral-300'
+                }`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* CARD DETAIL MODAL */}
+      {/* Main Board Area */}
+      <div className="flex-1 overflow-y-auto pr-1">
+        {swimlaneMode === 'none' ? (
+          /* STANDARD FLAT KANBAN BOARD */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 h-full min-h-[520px]">
+            {columns.map((col) => {
+              const colCards = filteredCards.filter((c) => c.column === col.id);
+              const isAtWipLimit = col.id === 'in_progress' && colCards.length >= WIP_LIMIT_IN_PROGRESS;
+
+              return (
+                <div
+                  key={col.id}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, col.id)}
+                  className={`flex flex-col bg-neutral-900/50 rounded-xl border ${col.color} p-3 min-w-[280px] shadow-sm`}
+                >
+                  {/* Column Header */}
+                  <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-neutral-800">
+                    <div>
+                      <h3 className="text-xs font-bold text-white flex items-center gap-2">
+                        {col.title}
+                        <span className="text-[10px] font-mono text-neutral-400 px-1.5 py-0.5 bg-neutral-800 rounded">
+                          {colCards.length}
+                        </span>
+                      </h3>
+                      <span className="text-[10px] text-neutral-400 block">{col.hint}</span>
+                    </div>
+                    {isAtWipLimit && (
+                      <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                        WIP LIMIT
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Card List */}
+                  <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+                    {colCards.length === 0 ? (
+                      <div className="h-28 flex items-center justify-center border border-dashed border-neutral-800 rounded-lg text-neutral-400 text-xs text-center p-3">
+                        Перетащите карточки сюда
+                      </div>
+                    ) : (
+                      colCards.map(renderCardItem)
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          /* HORIZONTAL SWIMLANES VIEW */
+          <div className="space-y-4 pb-6">
+            {activeSwimlanes.map((lane) => {
+              const isCollapsed = collapsedSwimlanes.has(lane.id);
+              const laneCards = filteredCards.filter((c) =>
+                swimlaneMode === 'priority' ? c.priority === lane.id : c.type === lane.id
+              );
+              const laneInProgress = laneCards.filter((c) => c.column === 'in_progress').length;
+
+              return (
+                <div
+                  key={lane.id}
+                  className={`rounded-xl border transition-all overflow-hidden ${
+                    isCollapsed ? 'bg-neutral-900/40 border-neutral-850' : 'bg-neutral-900/60 border-neutral-800 shadow-md'
+                  }`}
+                >
+                  {/* Horizontal Swimlane Header Row */}
+                  <div
+                    onClick={() => toggleSwimlaneCollapse(lane.id)}
+                    className="flex items-center justify-between p-3 bg-neutral-950/80 cursor-pointer hover:bg-neutral-900/90 transition-colors border-b border-neutral-800/80"
+                  >
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        className="text-neutral-400 hover:text-white p-0.5"
+                        aria-label={isCollapsed ? 'Развернуть свимлейн' : 'Свернуть свимлейн'}
+                      >
+                        {isCollapsed ? (
+                          <ChevronRight className="w-4 h-4 text-cyan-400" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-cyan-400" />
+                        )}
+                      </button>
+
+                      <div className="flex items-center gap-2">
+                        {lane.icon}
+                        <h3 className="text-xs font-bold text-white tracking-wide">
+                          {lane.title}
+                        </h3>
+                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${lane.color}`}>
+                          {lane.badge}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-xs font-mono">
+                      <span className="text-neutral-400">
+                        Всего: <strong className="text-white">{laneCards.length}</strong>
+                      </span>
+                      <span>·</span>
+                      <span className={laneInProgress > 0 ? 'text-cyan-400' : 'text-neutral-400'}>
+                        В работе: <strong>{laneInProgress}</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Horizontal 4-Column Grid inside Swimlane */}
+                  {!isCollapsed && (
+                    <div className="p-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 bg-neutral-950/30">
+                      {columns.map((col) => {
+                        const cellCards = laneCards.filter((c) => c.column === col.id);
+                        const isAtWipLimit = col.id === 'in_progress' && inProgressCount >= WIP_LIMIT_IN_PROGRESS;
+
+                        return (
+                          <div
+                            key={col.id}
+                            onDragOver={handleDragOver}
+                            onDrop={(e) => handleDrop(e, col.id, lane.id)}
+                            className={`flex flex-col bg-neutral-900/40 rounded-lg border ${col.color} p-2.5 min-h-[140px] transition-colors hover:border-neutral-700`}
+                          >
+                            {/* Column Header inside Swimlane */}
+                            <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-neutral-800/80 text-[11px]">
+                              <span className="font-semibold text-neutral-300 flex items-center gap-1.5">
+                                {col.title}
+                                <span className="font-mono text-[10px] text-neutral-400 px-1 py-0.2 bg-neutral-800 rounded">
+                                  {cellCards.length}
+                                </span>
+                              </span>
+                              {col.id === 'in_progress' && (
+                                <span className="text-[9px] font-mono text-neutral-400">
+                                  WIP: {inProgressCount}/{WIP_LIMIT_IN_PROGRESS}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Cards list in this swimlane cell */}
+                            <div className="space-y-2 flex-1">
+                              {cellCards.length === 0 ? (
+                                <div className="h-16 flex items-center justify-center border border-dashed border-neutral-800/80 rounded text-[11px] text-neutral-400 text-center">
+                                  Пусто
+                                </div>
+                              ) : (
+                                cellCards.map(renderCardItem)
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* CARD DETAIL MODAL (with Focus Trap & WCAG 2.1 AA) */}
       {selectedCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="card-detail-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+        >
+          <div
+            ref={detailModalRef}
+            tabIndex={-1}
+            className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl focus:outline-none"
+          >
             {/* Modal Header */}
             <div className="p-4 bg-neutral-950 border-b border-neutral-800 flex items-start justify-between gap-3">
               <div>
@@ -407,15 +755,19 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     Приоритет: {selectedCard.priority}
                   </span>
                   <span>·</span>
-                  <span className="font-mono text-neutral-500">Автор: {selectedCard.createdBy}</span>
+                  <span className="font-mono text-neutral-400">Автор: {selectedCard.createdBy}</span>
                 </div>
-                <h3 className="text-sm font-bold text-white">{selectedCard.title}</h3>
+                <h3 id="card-detail-title" className="text-sm font-bold text-white">
+                  {selectedCard.title}
+                </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedCard(null)}
-                className="text-neutral-400 hover:text-white p-1 text-sm"
+                aria-label="Закрыть карточку"
+                className="text-neutral-400 hover:text-white p-1 rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -453,7 +805,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                       onMoveCard(selectedCard.id, 'in_progress');
                       setSelectedCard(null);
                     }}
-                    className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium transition-colors"
+                    className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-medium transition-colors focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none"
                   >
                     Взять в работу (WIP $\le 3$)
                   </button>
@@ -469,7 +821,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                       setSelectedCard(updated);
                       setRatingModalCard(updated);
                     }}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-medium flex items-center gap-1.5 transition-colors"
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-medium flex items-center gap-1.5 transition-colors focus-visible:ring-2 focus-visible:ring-emerald-400 focus:outline-none"
                   >
                     <GitPullRequest className="w-3.5 h-3.5" />
                     Создать PR и внедрить
@@ -480,7 +832,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                       setRejectModalCard({ card: selectedCard, targetCol: 'deferred' });
                       setSelectedCard(null);
                     }}
-                    className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-rose-300 rounded font-medium transition-colors"
+                    className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-rose-300 rounded font-medium transition-colors focus-visible:ring-2 focus-visible:ring-rose-400 focus:outline-none"
                   >
                     Отклонить / Отложить
                   </button>
@@ -491,7 +843,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         onRollbackCard(selectedCard.id, 'Низкая оценка качества кода суперадмином');
                         setSelectedCard(null);
                       }}
-                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded font-medium flex items-center gap-1.5 transition-colors ml-auto"
+                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded font-medium flex items-center gap-1.5 transition-colors ml-auto focus-visible:ring-2 focus-visible:ring-rose-400 focus:outline-none"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                       Откатить изменения (Rollback)
@@ -512,12 +864,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                         <span className="font-semibold text-neutral-200">
                           {cmt.avatar} {cmt.author}
                         </span>
-                        <span className="font-mono text-neutral-500">{cmt.timestamp}</span>
+                        <span className="font-mono text-neutral-400">{cmt.timestamp}</span>
                       </div>
                       <p className="text-neutral-300">{cmt.text}</p>
                     </div>
                   ))}
                 </div>
+
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -525,11 +878,12 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     onChange={(e) => setNewCommentText(e.target.value)}
                     placeholder="Оставить комментарий или инструкцию агенту..."
                     onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
-                    className="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-cyan-500"
+                    aria-label="Текст комментария"
+                    className="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-1.5 text-xs text-neutral-200 focus:outline-none focus:border-cyan-500 focus-visible:ring-1 focus-visible:ring-cyan-500"
                   />
                   <button
                     onClick={handleAddComment}
-                    className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs"
+                    className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none"
                   >
                     Отправить
                   </button>
@@ -540,11 +894,20 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         </div>
       )}
 
-      {/* REJECT FEEDBACK MODAL (Trains AI Agent) */}
+      {/* REJECT FEEDBACK MODAL (Trains AI Agent) with Focus Trap */}
       {rejectModalCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-md p-5 shadow-2xl">
-            <div className="flex items-center gap-2 text-rose-400 text-sm font-bold mb-2">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reject-feedback-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+        >
+          <div
+            ref={rejectModalRef}
+            tabIndex={-1}
+            className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-md p-5 shadow-2xl focus:outline-none"
+          >
+            <div id="reject-feedback-title" className="flex items-center gap-2 text-rose-400 text-sm font-bold mb-2">
               <AlertCircle className="w-5 h-5" />
               Обратная связь для обучения ИИ-агента
             </div>
@@ -586,6 +949,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 placeholder="Или напишите детальный комментарий..."
                 value={customRejectReason}
                 onChange={(e) => setCustomRejectReason(e.target.value)}
+                aria-label="Детальный комментарий к отклонению"
                 className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -593,13 +957,13 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
             <div className="flex justify-end gap-2 text-xs">
               <button
                 onClick={() => setRejectModalCard(null)}
-                className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg"
+                className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none"
               >
                 Отмена
               </button>
               <button
                 onClick={confirmRejection}
-                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-medium rounded-lg"
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-medium rounded-lg focus-visible:ring-2 focus-visible:ring-rose-400 focus:outline-none"
               >
                 Зафиксировать и обучить модель
               </button>
@@ -608,11 +972,20 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         </div>
       )}
 
-      {/* CODE QUALITY EVALUATION & ROLLBACK MODAL */}
+      {/* CODE QUALITY EVALUATION & ROLLBACK MODAL with Focus Trap */}
       {ratingModalCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-md p-5 shadow-2xl">
-            <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rating-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+        >
+          <div
+            ref={ratingModalRef}
+            tabIndex={-1}
+            className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-md p-5 shadow-2xl focus:outline-none"
+          >
+            <h3 id="rating-modal-title" className="text-sm font-bold text-white mb-2 flex items-center gap-2">
               <Star className="w-4 h-4 text-amber-400 fill-current" />
               Оценка качества кода агента
             </h3>
@@ -626,7 +999,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 <button
                   key={star}
                   onClick={() => setStarRating(star)}
-                  className="p-1 hover:scale-125 transition-transform"
+                  aria-label={`${star} звезд`}
+                  className="p-1 hover:scale-125 transition-transform focus-visible:ring-2 focus-visible:ring-amber-400 rounded focus:outline-none"
                 >
                   <Star
                     className={`w-6 h-6 ${
@@ -642,6 +1016,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               placeholder="Комментарий к качеству кода (читаемость, соблюдение архитектурных конвенций)..."
               value={ratingFeedback}
               onChange={(e) => setRatingFeedback(e.target.value)}
+              aria-label="Комментарий к качеству кода"
               className="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2.5 text-xs text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-cyan-500 mb-4"
             />
 
@@ -658,7 +1033,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                     onRollbackCard(ratingModalCard.id, ratingFeedback || 'Низкая оценка кода');
                     setRatingModalCard(null);
                   }}
-                  className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-medium rounded-lg flex items-center gap-1.5"
+                  className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-medium rounded-lg flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-rose-400 focus:outline-none"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   Откатить (Rollback)
@@ -669,7 +1044,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                   onRateCard(ratingModalCard.id, starRating, ratingFeedback);
                   setRatingModalCard(null);
                 }}
-                className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded-lg"
+                className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded-lg focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none"
               >
                 Сохранить оценку
               </button>

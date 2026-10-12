@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Layers, Shield, Boxes, Briefcase, GraduationCap, BookOpen, ArrowRight, Terminal } from 'lucide-react';
 import { Tenant, KanbanCard, PluginManifest, CrmDeal, LmsCourse, SecurityFinding, PipelineBuild } from '../../types';
 import { INITIAL_WIKI_DOCS } from '../../data/mockData';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface UniversalSearchModalProps {
   isOpen: boolean;
@@ -37,15 +38,19 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
   onSelectResult,
 }) => {
   const [query, setQuery] = useState<string>('');
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const { containerRef } = useFocusTrap({
+    isOpen,
+    onClose,
+    initialFocusRef: inputRef,
+  });
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         if (isOpen) onClose();
-      }
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -145,21 +150,36 @@ export const UniversalSearchModal: React.FC<UniversalSearchModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[75vh]">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Универсальный поиск по платформе"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+    >
+      <div
+        ref={containerRef}
+        tabIndex={-1}
+        className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[75vh] focus:outline-none"
+      >
         {/* Search Input Bar */}
         <div className="p-3 bg-neutral-950 border-b border-neutral-800 flex items-center gap-3">
           <Search className="w-4 h-4 text-neutral-400 shrink-0 ml-1" />
           <input
+            ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Кросс-платформенный поиск: тенанты, плагины, карточки, код, CVE, вики..."
-            autoFocus
+            aria-label="Поисковый запрос"
             className="flex-1 bg-transparent text-xs text-white placeholder-neutral-500 focus:outline-none font-sans"
           />
           <kbd className="px-2 py-0.5 bg-neutral-800 text-[10px] font-mono text-neutral-400 rounded">ESC</kbd>
-          <button onClick={onClose} className="text-neutral-400 hover:text-white p-1">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Закрыть поиск"
+            className="text-neutral-400 hover:text-white p-1 rounded focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>

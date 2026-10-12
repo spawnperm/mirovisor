@@ -86,3 +86,85 @@ export function generateTenantUtilizationHistory(
 
   return points;
 }
+
+/**
+ * Generates historical multi-day trend time-series data for tenant storage usage
+ * and API request rates with linear regression trendlines.
+ */
+export function generateHistoricalTrendData(
+  tenantId: string,
+  storageQuotaMb: number,
+  storageUsedMb: number,
+  baseRps: number = 240,
+  daysCount: number = 30
+): import('../types').HistoricalTrendPoint[] {
+  const points: import('../types').HistoricalTrendPoint[] = [];
+  const now = new Date();
+  const quotaGb = Math.round((storageQuotaMb / 1024) * 10) / 10;
+  const currentStorageGb = Math.round((storageUsedMb / 1024) * 100) / 100;
+
+  let seed = 0;
+  for (let i = 0; i < tenantId.length; i++) {
+    seed += tenantId.charCodeAt(i);
+  }
+
+  const pseudoRandom = (step: number) => {
+    const x = Math.sin(seed + step * 19.313) * 43758.5453;
+    return x - Math.floor(x);
+  };
+
+  // Historical starting storage: e.g. 60% of current storage 30 days ago
+  const growthRate = 0.4 / daysCount; // gradual expansion
+
+  for (let d = daysCount - 1; d >= 0; d--) {
+    const date = new Date(now.getTime() - d * 24 * 60 * 60 * 1000);
+    const dayLabel = `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}`;
+    const progress = (daysCount - 1 - d) / Math.max(1, daysCount - 1);
+
+    // Storage steadily climbs with minor fluctuations
+    const baseStorage = currentStorageGb * (0.65 + progress * 0.35);
+    const storageNoise = (pseudoRandom(d * 3) - 0.5) * (currentStorageGb * 0.04);
+    const storageUsedGb = Math.max(0.5, Math.round((baseStorage + storageNoise) * 100) / 100);
+
+    // API RPS shows weekly seasonality (lower on weekends) + steady growth trend
+    const dayOfWeek = date.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const weekendFactor = isWeekend ? 0.6 : 1.0;
+    const rpsGrowthFactor = 1 + progress * 0.45; // +45% traffic growth
+    const rpsNoise = (pseudoRandom(d * 7) - 0.5) * (baseRps * 0.25);
+    const apiRps = Math.max(10, Math.round((baseRps * weekendFactor * rpsGrowthFactor + rpsNoise)));
+
+    points.push({
+      timestamp: date.toISOString(),
+      dateLabel: dayLabel,
+      storageUsedGb,
+      storageQuotaGb: quotaGb,
+      apiRps,
+    });
+  }
+
+  // Calculate linear regression for storage trend and RPS trend
+  const n = points.length;
+  let sumX = 0, sumStorage = 0, sumRps = 0, sumXStorage = 0, sumXRps = 0, sumX2 = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    sumStorage += points[i].storageUsedGb;
+    sumRps += points[i].apiRps;
+    sumXStorage += i * points[i].storageUsedGb;
+    sumXRps += i * points[i].apiRps;
+    sumX2 += i * i;
+  }
+
+  const denom = (n * sumX2 - sumX * sumX) || 1;
+  const storageSlope = (n * sumXStorage - sumX * sumStorage) / denom;
+  const storageIntercept = (sumStorage - storageSlope * sumX) / n;
+
+  const rpsSlope = (n * sumXRps - sumX * sumRps) / denom;
+  const rpsIntercept = (sumRps - rpsSlope * sumX) / n;
+
+  return points.map((p, idx) => ({
+    ...p,
+    storageTrendGb: Math.round((storageIntercept + storageSlope * idx) * 100) / 100,
+    rpsTrend: Math.round(rpsIntercept + rpsSlope * idx),
+  }));
+}

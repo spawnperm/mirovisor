@@ -44,7 +44,8 @@ export type NavTabId =
   | 'lms' 
   | 'security' 
   | 'observability' 
-  | 'wiki';
+  | 'wiki'
+  | 'devtools';
 
 interface HeaderProps {
   activeTab: NavTabId;
@@ -308,6 +309,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'security', label: 'Безопасность', icon: <ShieldCheck className="w-3.5 h-3.5" /> },
     { id: 'observability', label: 'Метрики', icon: <Activity className="w-3.5 h-3.5" /> },
     { id: 'wiki', label: 'LLM Wiki', icon: <BookOpen className="w-3.5 h-3.5" /> },
+    { id: 'devtools', label: 'DevTools & Голос', icon: <Terminal className="w-3.5 h-3.5 text-cyan-400" /> },
   ];
 
   return (

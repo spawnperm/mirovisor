@@ -27,6 +27,7 @@ import { Tenant } from '../../types';
 import { VoiceMacro } from '../../types/macros';
 import { AiAgentService } from '../../services/aiAgentService';
 import { VoiceInteractionLog } from './VoiceInteractionLog';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 export { VoiceInteractionLog };
 
@@ -76,6 +77,7 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
   macros,
   onOpenMacroRegistry,
 }) => {
+  const { containerRef } = useFocusTrap({ isOpen, onClose });
   const [isListening, setIsListening] = useState<boolean>(true);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [spokenText, setSpokenText] = useState<string>('');
@@ -497,8 +499,17 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-2xl flex flex-col shadow-2xl relative overflow-hidden max-h-[92vh]">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Голосовое программирование портала"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
+    >
+      <div
+        ref={containerRef}
+        tabIndex={-1}
+        className="bg-neutral-900 border border-neutral-800 rounded-3xl w-full max-w-2xl flex flex-col shadow-2xl relative overflow-hidden max-h-[92vh] focus:outline-none"
+      >
         {/* Top Header */}
         <div className="p-4 px-6 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/70">
           <div className="flex items-center gap-3">

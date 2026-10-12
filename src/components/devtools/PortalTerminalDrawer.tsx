@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Terminal, X, Play, RotateCcw, Shield, Check, CornerDownLeft } from 'lucide-react';
 import { Tenant, User } from '../../types';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface PortalTerminalDrawerProps {
   isOpen: boolean;
@@ -33,6 +34,13 @@ export const PortalTerminalDrawer: React.FC<PortalTerminalDrawerProps> = ({
   ]);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const { containerRef } = useFocusTrap({
+    isOpen,
+    onClose,
+    initialFocusRef: inputRef,
+  });
 
   useEffect(() => {
     if (isOpen) {
@@ -163,7 +171,14 @@ export const PortalTerminalDrawer: React.FC<PortalTerminalDrawerProps> = ({
   };
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 bg-neutral-950 border-t border-neutral-800 shadow-2xl h-80 flex flex-col font-mono text-xs">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Терминал разработчика и WebContainers CLI"
+      ref={containerRef}
+      tabIndex={-1}
+      className="fixed inset-x-0 bottom-0 z-50 bg-neutral-950 border-t border-neutral-800 shadow-2xl h-80 flex flex-col font-mono text-xs focus:outline-none animate-in slide-in-from-bottom duration-200"
+    >
       {/* Drawer Title Bar */}
       <div className="flex items-center justify-between px-4 py-2 bg-neutral-900 border-b border-neutral-800 text-neutral-300">
         <div className="flex items-center gap-2">
@@ -174,16 +189,22 @@ export const PortalTerminalDrawer: React.FC<PortalTerminalDrawerProps> = ({
 
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={() => {
               setHistory([
                 { id: '1', type: 'output', text: 'Терминал очищен.' },
               ]);
             }}
-            className="text-[11px] text-neutral-400 hover:text-white px-2 py-0.5 rounded bg-neutral-800"
+            className="text-[11px] text-neutral-400 hover:text-white px-2 py-0.5 rounded bg-neutral-800 focus-visible:ring-1 focus-visible:ring-cyan-400 focus:outline-none"
           >
             Clear
           </button>
-          <button onClick={onClose} className="text-neutral-400 hover:text-white p-1">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Закрыть терминал"
+            className="text-neutral-400 hover:text-white p-1 rounded focus-visible:ring-2 focus-visible:ring-cyan-400 focus:outline-none"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -214,14 +235,19 @@ export const PortalTerminalDrawer: React.FC<PortalTerminalDrawerProps> = ({
       <form onSubmit={handleRunCommand} className="flex items-center gap-2 px-3 py-2 bg-neutral-900 border-t border-neutral-800">
         <span className="text-cyan-400 font-bold">$</span>
         <input
+          ref={inputRef}
           type="text"
           value={commandInput}
           onChange={(e) => setCommandInput(e.target.value)}
           placeholder="Введите команду (например: ci run, rls test, agent inspect, help)..."
+          aria-label="Командная строка терминала"
           className="flex-1 bg-transparent text-white focus:outline-none text-xs"
-          autoFocus
         />
-        <button type="submit" className="text-neutral-400 hover:text-white p-1">
+        <button
+          type="submit"
+          aria-label="Выполнить команду"
+          className="text-neutral-400 hover:text-white p-1 rounded focus-visible:ring-1 focus-visible:ring-cyan-400 focus:outline-none"
+        >
           <CornerDownLeft className="w-4 h-4" />
         </button>
       </form>

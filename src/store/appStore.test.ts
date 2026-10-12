@@ -1,0 +1,84 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { useAppStore } from './useAppStore';
+import { KanbanCard } from '../types';
+
+describe('useAppStore (Zustand Global State)', () => {
+  beforeEach(() => {
+    useAppStore.getState().resetUiState();
+  });
+
+  it('manages active tab and modal states correctly', () => {
+    const store = useAppStore.getState();
+    expect(store.activeTab).toBe('audit');
+
+    store.setActiveTab('kanban');
+    expect(useAppStore.getState().activeTab).toBe('kanban');
+
+    store.setSearchOpen(true);
+    expect(useAppStore.getState().isSearchOpen).toBe(true);
+
+    store.setSearchOpen(false);
+    expect(useAppStore.getState().isSearchOpen).toBe(false);
+  });
+
+  it('enforces WIP limit strictly on moveCard to in_progress', () => {
+    const testCards: KanbanCard[] = [
+      { id: 'c1', title: 'Task 1', description: '', type: 'security', priority: 'high', column: 'in_progress', source: '', attachments: [], checklist: [], createdBy: '', createdAt: '', comments: [] },
+      { id: 'c2', title: 'Task 2', description: '', type: 'devops', priority: 'medium', column: 'in_progress', source: '', attachments: [], checklist: [], createdBy: '', createdAt: '', comments: [] },
+      { id: 'c3', title: 'Task 3', description: '', type: 'testing', priority: 'low', column: 'in_progress', source: '', attachments: [], checklist: [], createdBy: '', createdAt: '', comments: [] },
+      { id: 'c4', title: 'Task 4', description: '', type: 'ux', priority: 'high', column: 'ideas', source: '', attachments: [], checklist: [], createdBy: '', createdAt: '', comments: [] },
+    ];
+
+    useAppStore.setState({ cards: testCards });
+
+    // Try moving 4th card to in_progress - must be rejected
+    const moved = useAppStore.getState().moveCard('c4', 'in_progress');
+    expect(moved).toBe(false);
+    expect(useAppStore.getState().cards.find((c) => c.id === 'c4')?.column).toBe('ideas');
+  });
+
+  it('allows moving cards to collected and applies rollback', () => {
+    const testCard: KanbanCard = {
+      id: 'c-test',
+      title: 'PostgreSQL RLS Hardening',
+      description: '',
+      type: 'security',
+      priority: 'critical',
+      column: 'in_progress',
+      source: '',
+      attachments: [],
+      checklist: [],
+      createdBy: 'AppSec Agent',
+      createdAt: '',
+      comments: [],
+    };
+
+    useAppStore.setState({ cards: [testCard] });
+
+    useAppStore.getState().moveCard('c-test', 'collected');
+    expect(useAppStore.getState().cards[0].column).toBe('collected');
+
+    // Rollback test
+    useAppStore.getState().rollbackCard('c-test', 'Regression in unit tests');
+    const rolledBack = useAppStore.getState().cards[0];
+    expect(rolledBack.column).toBe('deferred');
+    expect(rolledBack.rolledBack).toBe(true);
+    expect(rolledBack.rejectionReason).toContain('Regression in unit tests');
+  });
+
+  it('executes predefined voice macros and records history', () => {
+    const store = useAppStore.getState();
+    const nightlyMacro = store.macros.find((m) => m.keyword.toLowerCase().includes('nightly'));
+
+    if (nightlyMacro) {
+      const priorTurns = store.voiceMemory.length;
+      store.executeMacro(nightlyMacro);
+
+      const updatedMemory = useAppStore.getState().voiceMemory;
+      expect(updatedMemory.length).toBeGreaterThan(priorTurns);
+      const lastAgentTurn = updatedMemory[updatedMemory.length - 1];
+      expect(lastAgentTurn.role).toBe('agent');
+      expect(lastAgentTurn.text).toContain('Исполнен голосовой макрос');
+    }
+  });
+});
