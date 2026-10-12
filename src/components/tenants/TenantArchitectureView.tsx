@@ -87,6 +87,13 @@ export const TenantArchitectureView: React.FC<TenantArchitectureViewProps> = ({
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [scalingAlert, setScalingAlert] = useState<string | null>(null);
 
+  // Sync state when active tenant changes
+  React.useEffect(() => {
+    if (activeTenant.config) {
+      setFormConfig(activeTenant.config);
+    }
+  }, [activeTenant.id, activeTenant.config]);
+
   // Simulator state
   const [testQuery, setTestQuery] = useState<string>('SELECT * FROM invoices;');
   const [simulatorOutput, setSimulatorOutput] = useState<string>('');
