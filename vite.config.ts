@@ -18,5 +18,21 @@ export default defineConfig(() => {
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
+    build: {
+      target: 'es2022',
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('react-dom')) return 'vendor-react';
+              if (id.includes('d3') || id.includes('recharts')) return 'vendor-viz';
+              if (id.includes('zustand') || id.includes('@tanstack')) return 'vendor-state';
+              if (id.includes('yjs') || id.includes('y-webrtc')) return 'vendor-collab';
+              if (id.includes('lucide-react') || id.includes('motion')) return 'vendor-ui';
+            }
+          },
+        },
+      },
+    },
   };
 });
