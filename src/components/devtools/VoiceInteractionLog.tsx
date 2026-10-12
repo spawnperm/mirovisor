@@ -121,6 +121,17 @@ export const VoiceInteractionLog: React.FC<VoiceInteractionLogProps> = ({
   const agentTurnsCount = turns.filter((t) => t.role === 'agent').length;
   const interruptedCount = turns.filter((t) => t.interrupted).length;
 
+  const lastAgentTurn = [...turns].reverse().find((t) => t.role === 'agent');
+  const [copiedLastAgent, setCopiedLastAgent] = useState<boolean>(false);
+
+  const handleCopyLastAgentResponse = () => {
+    if (!lastAgentTurn) return;
+    const textToCopy = lastAgentTurn.text;
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedLastAgent(true);
+    setTimeout(() => setCopiedLastAgent(false), 2000);
+  };
+
   return (
     <div className={`flex flex-col rounded-2xl bg-neutral-950/70 border border-neutral-800 shadow-xl overflow-hidden ${className}`}>
       {/* Top Header / Stats & Memory Toolbar */}
@@ -159,8 +170,33 @@ export const VoiceInteractionLog: React.FC<VoiceInteractionLogProps> = ({
           </div>
         </div>
 
-        {/* Action Buttons: Filter, Copy, Export, Clear */}
-        <div className="flex items-center gap-1.5">
+        {/* Action Buttons: Copy Last AI Response, Filter, Copy All, Export, Clear */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {/* 1-Click Copy Last Agent Response Button */}
+          <button
+            onClick={handleCopyLastAgentResponse}
+            disabled={!lastAgentTurn}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-mono flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
+              copiedLastAgent
+                ? 'bg-emerald-950 border border-emerald-500 text-emerald-300'
+                : lastAgentTurn
+                ? 'bg-purple-950/80 hover:bg-purple-900 border border-purple-700/80 text-purple-200 hover:text-white'
+                : 'bg-neutral-800/50 border border-neutral-800 text-neutral-500 opacity-40 cursor-not-allowed'
+            }`}
+            title={
+              lastAgentTurn
+                ? `Скопировать в буфер последний ответ AI агента:\n"${lastAgentTurn.text.slice(0, 80)}..."`
+                : 'Ответов агента пока нет'
+            }
+          >
+            {copiedLastAgent ? (
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+            )}
+            <span>{copiedLastAgent ? 'Ответ скопирован!' : 'Копировать ответ AI'}</span>
+          </button>
+
           <button
             onClick={handleCopyAll}
             disabled={turns.length === 0}
@@ -185,7 +221,7 @@ export const VoiceInteractionLog: React.FC<VoiceInteractionLogProps> = ({
             <button
               onClick={onClearLog}
               disabled={turns.length === 0}
-              className="p-1 rounded-lg bg-neutral-800/90 hover:bg-rose-950/60 hover:text-rose-400 text-neutral-400 border border-neutral-700/80 text-[11px] font-mono transition-colors disabled:opacity-40"
+              className="p-1 rounded-lg bg-neutral-800/90 hover:bg-rose-950/60 hover:text-rose-400 text-neutral-400 border border-neutral-700/80 text-[11px] font-mono transition-colors disabled:opacity-40 cursor-pointer"
               title="Очистить историю диалога"
             >
               <Trash2 className="w-3.5 h-3.5" />

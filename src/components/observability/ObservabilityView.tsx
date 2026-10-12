@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Activity, Server, AlertTriangle, Cpu, Database, HardDrive, Terminal, RefreshCw, BarChart2 } from 'lucide-react';
+import { Activity, Server, AlertTriangle, Cpu, Database, HardDrive, Terminal, RefreshCw, BarChart2, Radio } from 'lucide-react';
 import { Tenant, SystemMetric } from '../../types';
 import { ResourceUtilizationDashboard } from './ResourceUtilizationDashboard';
+import { NatsJetStreamMonitoringWidget } from './NatsJetStreamMonitoringWidget';
 
 interface ObservabilityViewProps {
   tenant: Tenant;
@@ -18,7 +19,7 @@ interface LokiLog {
 }
 
 export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, metrics }) => {
-  const [activeTab, setActiveTab] = useState<'utilization' | 'prometheus_loki'>('utilization');
+  const [activeTab, setActiveTab] = useState<'utilization' | 'nats_jetstream' | 'prometheus_loki'>('nats_jetstream');
 
   const currentMetric = metrics[tenant.id] || {
     tenantId: tenant.id,
@@ -62,15 +63,27 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
       <div className="px-4 pt-3 pb-2 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between gap-3">
         <div className="flex items-center gap-1.5 p-1 bg-neutral-900 border border-neutral-800 rounded-xl text-xs">
           <button
-            onClick={() => setActiveTab('utilization')}
+            onClick={() => setActiveTab('nats_jetstream')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
-              activeTab === 'utilization'
+              activeTab === 'nats_jetstream'
                 ? 'bg-cyan-600 text-white shadow-sm'
                 : 'text-neutral-400 hover:text-white'
             }`}
           >
+            <Radio className="w-3.5 h-3.5 animate-pulse" />
+            NATS JetStream (Recharts)
+          </button>
+
+          <button
+            onClick={() => setActiveTab('utilization')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
+              activeTab === 'utilization'
+                ? 'bg-neutral-800 text-white shadow-sm'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
             <BarChart2 className="w-3.5 h-3.5" />
-            Утилизация Ресурсов (D3.js Charts)
+            Утилизация Ресурсов (D3.js)
           </button>
 
           <button
@@ -95,7 +108,11 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
 
       {/* Main View Render */}
       <div className="flex-1 overflow-hidden">
-        {activeTab === 'utilization' ? (
+        {activeTab === 'nats_jetstream' ? (
+          <div className="h-full p-4 overflow-y-auto">
+            <NatsJetStreamMonitoringWidget tenant={tenant} />
+          </div>
+        ) : activeTab === 'utilization' ? (
           <ResourceUtilizationDashboard activeTenant={tenant} />
         ) : (
           <div className="flex flex-col h-full p-4 gap-4 overflow-y-auto">

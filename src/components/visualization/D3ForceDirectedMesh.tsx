@@ -469,7 +469,7 @@ export const D3ForceDirectedMesh: React.FC<D3ForceDirectedMeshProps> = ({
       .attr('fill', '#94a3b8')
       .text((d) => d.subtype);
 
-    // Node click handler
+    // Node click handler: interactive highlighting and inspection
     node.on('click', (event, d) => {
       event.stopPropagation();
       setSelectedNode(d);
@@ -498,6 +498,101 @@ export const D3ForceDirectedMesh: React.FC<D3ForceDirectedMeshProps> = ({
       simulation.stop();
     };
   }, [filteredNodes, filteredLinks, activeTenant.id, pulseCount]);
+
+  // Dynamic interactive node & link highlighting effect when selectedNode changes
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const svg = d3.select(svgRef.current);
+
+    if (!selectedNode) {
+      // Reset all to default opacity and vibrant styles
+      svg.selectAll('.node-item')
+        .transition().duration(200)
+        .style('opacity', 1);
+
+      svg.selectAll('.node-item circle')
+        .attr('stroke-width', (d: any) => (d.id === activeTenant.id ? 2.5 : 1.8));
+
+      svg.selectAll('.links line')
+        .transition().duration(200)
+        .attr('stroke-opacity', 0.6)
+        .attr('stroke-width', (d: any) => (d.trafficIntensity === 'high' ? 2 : 1.2));
+
+      svg.selectAll('.links text')
+        .transition().duration(200)
+        .style('opacity', 1);
+
+      return;
+    }
+
+    // Determine the set of connected node IDs (direct connections and 2nd degree infra if clicked node is tenant)
+    const connectedIds = new Set<string>();
+    connectedIds.add(selectedNode.id);
+
+    // 1st pass: find all directly connected targets/sources from filteredLinks
+    const directConnected = new Set<string>();
+    filteredLinks.forEach((link) => {
+      const srcId = typeof link.source === 'object' ? (link.source as MeshNode).id : (link.source as string);
+      const tgtId = typeof link.target === 'object' ? (link.target as MeshNode).id : (link.target as string);
+
+      if (srcId === selectedNode.id) {
+        directConnected.add(tgtId);
+        connectedIds.add(tgtId);
+      } else if (tgtId === selectedNode.id) {
+        directConnected.add(srcId);
+        connectedIds.add(srcId);
+      }
+    });
+
+    // If a tenant node is selected, also include infrastructure resources connected through its plugins!
+    if (selectedNode.type === 'tenant') {
+      filteredLinks.forEach((link) => {
+        const srcId = typeof link.source === 'object' ? (link.source as MeshNode).id : (link.source as string);
+        const tgtId = typeof link.target === 'object' ? (link.target as MeshNode).id : (link.target as string);
+
+        if (directConnected.has(srcId)) {
+          connectedIds.add(tgtId);
+        } else if (directConnected.has(tgtId)) {
+          connectedIds.add(srcId);
+        }
+      });
+    }
+
+    // Apply dimming / highlighting to Nodes
+    svg.selectAll('.node-item')
+      .transition().duration(250)
+      .style('opacity', (d: any) => (connectedIds.has(d.id) ? 1 : 0.15));
+
+    svg.selectAll('.node-item')
+      .filter((d: any) => d.id === selectedNode.id)
+      .select('circle')
+      .transition().duration(250)
+      .attr('stroke-width', 4)
+      .attr('stroke', '#38bdf8');
+
+    // Apply highlighting to Links connected to the selected entity
+    svg.selectAll('.links line')
+      .transition().duration(250)
+      .attr('stroke-opacity', (d: any) => {
+        const srcId = typeof d.source === 'object' ? d.source.id : d.source;
+        const tgtId = typeof d.target === 'object' ? d.target.id : d.target;
+        return connectedIds.has(srcId) && connectedIds.has(tgtId) ? 0.95 : 0.05;
+      })
+      .attr('stroke-width', (d: any) => {
+        const srcId = typeof d.source === 'object' ? d.source.id : d.source;
+        const tgtId = typeof d.target === 'object' ? d.target.id : d.target;
+        return connectedIds.has(srcId) && connectedIds.has(tgtId) ? 3 : 0.8;
+      });
+
+    // Link texts
+    svg.selectAll('.links text')
+      .transition().duration(250)
+      .style('opacity', (d: any) => {
+        const srcId = typeof d.source === 'object' ? d.source.id : d.source;
+        const tgtId = typeof d.target === 'object' ? d.target.id : d.target;
+        return connectedIds.has(srcId) && connectedIds.has(tgtId) ? 1 : 0.05;
+      });
+  }, [selectedNode, filteredLinks, activeTenant.id]);
 
   // Handle Zoom In / Out / Reset
   const handleZoom = (scaleFactor: number) => {

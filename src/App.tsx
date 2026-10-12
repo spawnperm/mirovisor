@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { Header, NavTabId } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { MultidimensionalDataVisualizer } from './components/visualization/MultidimensionalDataVisualizer';
 import { KanbanBoard } from './components/kanban/KanbanBoard';
 import { PipelinesView } from './components/pipelines/PipelinesView';
@@ -896,20 +897,32 @@ export const VoiceWidget = createComponentExtension({
 
   const inProgressCardsCount = cards.filter((c) => c.column === 'in_progress').length;
 
+  const handleResetUiState = () => {
+    setActiveTab('audit');
+    setActiveTenant(tenants[0] || INITIAL_TENANTS[0]);
+    setIsSearchOpen(false);
+    setIsTerminalOpen(false);
+    setIsVoiceOpen(false);
+    setIsMacroRegistryOpen(false);
+    // If cards or metrics crashed, reset to baseline mock data
+    setMetrics(INITIAL_METRICS);
+  };
+
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#090a0f] text-neutral-100 overflow-hidden font-sans">
-      {/* Top Application Header */}
-      <Header
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        tenants={tenants}
-        activeTenant={activeTenant}
-        onSelectTenant={setActiveTenant}
-        currentUser={currentUser}
-        onOpenSearch={() => setIsSearchOpen(true)}
-        onOpenTerminal={() => setIsTerminalOpen(true)}
-        onOpenVoice={() => setIsVoiceOpen(true)}
-      />
+    <ErrorBoundary onReset={handleResetUiState}>
+      <div className="flex flex-col h-screen w-screen bg-[#090a0f] text-neutral-100 overflow-hidden font-sans">
+        {/* Top Application Header */}
+        <Header
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          tenants={tenants}
+          activeTenant={activeTenant}
+          onSelectTenant={setActiveTenant}
+          currentUser={currentUser}
+          onOpenSearch={() => setIsSearchOpen(true)}
+          onOpenTerminal={() => setIsTerminalOpen(true)}
+          onOpenVoice={() => setIsVoiceOpen(true)}
+        />
 
       {/* Main View Area */}
       <main className="flex-1 overflow-hidden relative">
@@ -1057,6 +1070,7 @@ export const VoiceWidget = createComponentExtension({
         onOpenTerminal={() => setIsTerminalOpen(true)}
         onOpenVoice={() => setIsVoiceOpen(true)}
         cardsInProgressCount={inProgressCardsCount}
+        onResetUi={handleResetUiState}
       />
 
       {/* Universal Cmd+K Search Modal */}
@@ -1127,5 +1141,6 @@ export const VoiceWidget = createComponentExtension({
         onExecuteMacro={handleExecuteMacro}
       />
     </div>
+  </ErrorBoundary>
   );
 }
