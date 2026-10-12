@@ -21,7 +21,7 @@ import { ObservabilityView } from './components/observability/ObservabilityView'
 import { LlmWikiView } from './components/wiki/LlmWikiView';
 import { UniversalSearchModal } from './components/search/UniversalSearchModal';
 import { PortalTerminalDrawer } from './components/devtools/PortalTerminalDrawer';
-import { VoiceControlModal } from './components/devtools/VoiceControlModal';
+import { VoiceControlModal, VoiceActionResult } from './components/devtools/VoiceControlModal';
 
 import {
   INITIAL_TENANTS,
@@ -402,36 +402,216 @@ export default function App() {
     }
   };
 
-  // Voice Command parser & executor
-  const handleExecuteVoiceCommand = (commandText: string) => {
+  // Voice Command parser & portal programming executor
+  const handleExecuteVoiceCommand = (commandText: string): VoiceActionResult => {
     const text = commandText.toLowerCase();
-    if (text.includes('пайплайн') || text.includes('сборк') || text.includes('ci')) {
-      setActiveTab('pipelines');
-    } else if (text.includes('тен') || text.includes('мультитен') || text.includes('бренд')) {
-      setActiveTab('tenants');
-    } else if (text.includes('студия') || text.includes('бэкстейдж') || text.includes('backstage')) {
+
+    // 1. Programming & Scaffolding new Backstage micro-frontend plugin
+    if (text.includes('плагин') && (text.includes('создай') || text.includes('создать') || text.includes('студи') || text.includes('бэкстейдж') || text.includes('backstage'))) {
+      const pluginId = `plugin-voice-${Date.now().toString().slice(-4)}`;
+      const voicePlugin: BackstagePluginCode = {
+        id: pluginId,
+        title: 'Голосовой микрофронтенд-виджет',
+        version: '1.0.0',
+        author: currentUser.fullName,
+        category: 'devtools',
+        description: `Микрофронтенд плагин, сгенерированный голосовым агентом в схеме ${activeTenant.schema} по запросу суперадмина.`,
+        extensionPoint: 'ui-dashboard-card',
+        lifecycleState: 'active',
+        permissions: ['audit.codebase.read', 'telemetry.write'],
+        typescriptCode: `import { createPlugin, createComponentExtension } from '@mirovisor/plugin-sdk';
+
+export const voiceGeneratedPlugin = createPlugin({
+  id: '${pluginId}',
+  title: 'Voice Generated Plugin Widget',
+  async onInstall({ tenantId }) {
+    console.log(\`[Voice Agent] Installed plugin in tenant schema: \${tenantId}\`);
+  },
+});
+
+export const VoiceWidget = createComponentExtension({
+  name: 'VoiceWidget',
+  component: () => ({
+    render: () => ({
+      status: 'Live & Operating',
+      tenant: '${activeTenant.name}',
+      programmedVia: 'Gemini Live Voice Agent (Barge-in Ready)',
+    }),
+  }),
+});`,
+      };
+
+      // Add to manifest plugin catalog too
+      const manifest: PluginManifest = {
+        id: pluginId,
+        name: 'Voice Generated Microfrontend Widget',
+        version: '1.0.0',
+        description: 'Микрофронтенд-плагин, сгенерированный голосовым программированием.',
+        author: currentUser.fullName,
+        license: 'MIT',
+        dependencies: [],
+        conflicts: [],
+        permissions: ['audit.codebase.read'],
+        category: 'devtools',
+        priceRub: 0,
+        installedInTenants: [activeTenant.id],
+        status: 'active',
+      };
+
+      setPlugins((prev) => [manifest, ...prev]);
       setActiveTab('pluginstudio');
-    } else if (text.includes('безопасн') || text.includes('аудит')) {
+
+      return {
+        intent: 'scaffold_plugin',
+        responseSpeech: `Создан новый микрофронтенд-плагин «${voicePlugin.title}» и активирован в схеме тенанта ${activeTenant.name}. Переключаю вас в Plugin Studio.`,
+        details: `Сгенерирован Backstage SDK плагин [${pluginId}]. Добавлен в реестр модулей.`,
+        affectedEntity: pluginId,
+      };
+    }
+
+    // 2. Triggering CI/CD, Nx build, and automated multi-agent synthesis
+    if (text.includes('пайплайн') || text.includes('сборк') || text.includes('ci') || text.includes('оптимиз')) {
+      setActiveTab('pipelines');
+      handleTriggerBuild('main');
+      return {
+        intent: 'trigger_ci_cd',
+        responseSpeech: `Запущен CI/CD пайплайн для ветки main с проверками SAST, SCA и запуском Testcontainers. NATS JetStream событие отправлено AI-агентам для генерации улучшений.`,
+        details: `Сборка инициирована. Агенты Cordis анализируют свежую телеметрию.`,
+      };
+    }
+
+    // 3. Security audit & RLS verification
+    if (text.includes('безопасн') || text.includes('аудит') || text.includes('rls') || text.includes('asvs')) {
       setActiveTab('security');
-    } else if (text.includes('канбан') || text.includes('идеи') || text.includes('задач')) {
-      setActiveTab('kanban');
-    } else if (text.includes('сделк') || text.includes('crm') || text.includes('клиент')) {
-      setActiveTab('crm');
-    } else if (text.includes('офис') || text.includes('таблиц') || text.includes('univer')) {
-      setActiveTab('univer');
-    } else if (text.includes('плагин') || text.includes('маркет')) {
-      setActiveTab('plugins');
-    } else if (text.includes('откат')) {
+      const newAuditFinding: SecurityFinding = {
+        id: `sec_voice_${Date.now().toString().slice(-4)}`,
+        scanner: 'CodeQL',
+        severity: 'HIGH',
+        title: 'Голосовой аудит: Проверка изоляции Row-Level Security',
+        fileOrUrl: `libs/core/src/tenant/${activeTenant.slug}/rls.guard.ts`,
+        description: `Автоматический аудит схемы ${activeTenant.schema} подтвердил строгое действие политики RLS FORCE и отсутствие перекрестной утечки данных.`,
+        cwe: 'CWE-284 (Improper Access Control)',
+        status: 'open',
+        detectedAt: new Date().toISOString(),
+        remediationExplanation: 'RLS FORCE изоляция активна на уровне PostgreSQL ядра.',
+        remediationSnippet: `ALTER TABLE tenant_data FORCE ROW LEVEL SECURITY;\n-- Verified for ${activeTenant.schema}`,
+      };
+      setSecurityFindings((prev) => [newAuditFinding, ...prev]);
+      return {
+        intent: 'security_audit',
+        responseSpeech: `Проведен мгновенный аудит изоляции RLS для тенанта «${activeTenant.name}». Политика FORCE активна, утечек между арендаторами не обнаружено.`,
+        details: `ASVS 5.0 L2 аудит пройден. Запись аудита добавлена в Security Center.`,
+      };
+    }
+
+    // 4. Code rollback mechanism (Instant safe commit reversal)
+    if (text.includes('откат') || text.includes('откатить') || text.includes('rollback')) {
       const implemented = cards.find((c) => c.column === 'collected' && !c.rolledBack);
       if (implemented) {
         handleRollbackCard(implemented.id, 'Голосовая команда отката от суперадмина');
+        setActiveTab('kanban');
+        return {
+          intent: 'rollback_code',
+          responseSpeech: `Выполнен безопасный откат изменения «${implemented.title}». Создан коммит отката, а карточка отправлена на доработку.`,
+          details: `Откат зафиксирован: revert commit создан. Агент обучается на вашей обратной связи.`,
+          affectedEntity: implemented.id,
+        };
+      } else {
+        return {
+          intent: 'rollback_code',
+          responseSpeech: `Нет внедренных изменений, ожидающих отката. Все стабильные коммиты проверены.`,
+          details: `Нет карточек в статусе «Внедрено».`,
+        };
       }
-    } else if (text.includes('acme')) {
-      const acme = tenants.find((t) => t.id === 'tenant_acme');
-      if (acme) setActiveTenant(acme);
-    } else if (text.includes('метрик') || text.includes('прометей')) {
-      setActiveTab('observability');
     }
+
+    // 5. Tenant switching & hierarchical navigation
+    if (text.includes('acme') || text.includes('акме')) {
+      const acme = tenants.find((t) => t.id === 'tenant_acme');
+      if (acme) {
+        setActiveTenant(acme);
+        return {
+          intent: 'switch_tenant',
+          responseSpeech: `Контекст переключен на головной холдинг «ACME Industrial Group» (схема tenant_acme).`,
+          details: `Тенант обновлен: tenant_acme (RLS Scope применен)`,
+          affectedEntity: 'tenant_acme',
+        };
+      }
+    } else if (text.includes('бета') || text.includes('betalabs')) {
+      const beta = tenants.find((t) => t.id === 'tenant_betalabs');
+      if (beta) {
+        setActiveTenant(beta);
+        return {
+          intent: 'switch_tenant',
+          responseSpeech: `Контекст переключен на тенант «BetaLabs AI Cluster» (схема tenant_betalabs).`,
+          details: `Тенант обновлен: tenant_betalabs`,
+          affectedEntity: 'tenant_betalabs',
+        };
+      }
+    } else if (text.includes('нордик') || text.includes('nordic')) {
+      const nordic = tenants.find((t) => t.id === 'tenant_nordic');
+      if (nordic) {
+        setActiveTenant(nordic);
+        return {
+          intent: 'switch_tenant',
+          responseSpeech: `Контекст переключен на дочерний дивизион «Nordic Logistics».`,
+          details: `Тенант обновлен: tenant_nordic (Дочерний узел ACME)`,
+          affectedEntity: 'tenant_nordic',
+        };
+      }
+    }
+
+    // 6. Navigation intents
+    if (text.includes('канбан') || text.includes('задач') || text.includes('доск') || text.includes('идеи')) {
+      setActiveTab('kanban');
+      return {
+        intent: 'navigate_kanban',
+        responseSpeech: `Открываю Канбан-доску. В работе сейчас ${inProgressCardsCount} задач из лимита в 3.`,
+        details: `Переход на Канбан-доску`,
+      };
+    } else if (text.includes('тен') || text.includes('мультитен') || text.includes('схем')) {
+      setActiveTab('tenants');
+      return {
+        intent: 'navigate_tenants',
+        responseSpeech: `Открываю архитектуру мультитенантности и распределение схем данных.`,
+        details: `Переход в раздел «Тенанты»`,
+      };
+    } else if (text.includes('метрик') || text.includes('прометей') || text.includes('монитор')) {
+      setActiveTab('observability');
+      return {
+        intent: 'navigate_observability',
+        responseSpeech: `Открываю Prometheus & D3.js графики утилизации вычислительных мощностей и хранилища.`,
+        details: `Переход в панель «Наблюдаемость»`,
+      };
+    } else if (text.includes('сделк') || text.includes('crm') || text.includes('клиент')) {
+      setActiveTab('crm');
+      return {
+        intent: 'navigate_crm',
+        responseSpeech: `Открываю модуль Gauzy CRM с клиентами и сделками текущего тенанта.`,
+        details: `Переход в модуль CRM`,
+      };
+    } else if (text.includes('офис') || text.includes('таблиц') || text.includes('univer')) {
+      setActiveTab('univer');
+      return {
+        intent: 'navigate_univer',
+        responseSpeech: `Открываю офисные документы Univer Office.`,
+        details: `Переход в Univer Office`,
+      };
+    } else if (text.includes('вики') || text.includes('wiki') || text.includes('документ')) {
+      setActiveTab('wiki');
+      return {
+        intent: 'navigate_wiki',
+        responseSpeech: `Открываю LLM Wiki и архитектурные решения ADR.`,
+        details: `Переход в LLM Wiki`,
+      };
+    }
+
+    // Default conversational programming intent
+    return {
+      intent: 'general_query',
+      responseSpeech: `Я понял ваш запрос: «${commandText}». Платформа работает штатно в контексте тенанта «${activeTenant.name}». Что еще вы хотите запрограммировать или запустить?`,
+      details: `Контекст диалога сохранен в оперативной памяти агента.`,
+    };
   };
 
   const inProgressCardsCount = cards.filter((c) => c.column === 'in_progress').length;

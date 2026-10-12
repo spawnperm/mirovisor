@@ -69,7 +69,7 @@ export class AiAgentService {
     if (this.ai) {
       try {
         const response = await this.ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.8-flash',
           contents: `Ты — специализированный AI-агент ${agentMeta.name} в платформе "Мировизор".
 Проанализируй телеметрию CI/CD сборки:
 "${telemetrySummary}"
@@ -203,4 +203,55 @@ export class AiAgentService {
       ],
     };
   }
+
+  // Voice Agent Persistent Conversational Memory & Interruption Handling
+  private voiceConversationHistory: Array<{
+    id: string;
+    role: 'user' | 'agent' | 'system';
+    text: string;
+    timestamp: string;
+    actionResult?: string;
+    interrupted?: boolean;
+  }> = [
+    {
+      id: 'init_welcome',
+      role: 'agent',
+      text: 'Голосовой агент платформы «Мировизор» на связи. Вы можете программировать портал, создавать плагины, запускать тесты и переключать тенанты. Если захотите прервать меня, просто заговорите или нажмите микрофон!',
+      timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+    },
+  ];
+
+  public getVoiceConversationHistory() {
+    return [...this.voiceConversationHistory];
+  }
+
+  public addVoiceTurn(turn: {
+    role: 'user' | 'agent' | 'system';
+    text: string;
+    actionResult?: string;
+    interrupted?: boolean;
+  }) {
+    const newTurn = {
+      id: `vt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      ...turn,
+    };
+    this.voiceConversationHistory.push(newTurn);
+    return newTurn;
+  }
+
+  public markLastAgentTurnInterrupted(interruptionNote: string = 'Перебито пользователем (Barge-in)') {
+    for (let i = this.voiceConversationHistory.length - 1; i >= 0; i--) {
+      if (this.voiceConversationHistory[i].role === 'agent') {
+        this.voiceConversationHistory[i].interrupted = true;
+        this.voiceConversationHistory[i].actionResult = interruptionNote;
+        break;
+      }
+    }
+  }
+
+  public clearVoiceConversationHistory() {
+    this.voiceConversationHistory = [];
+  }
 }
+
