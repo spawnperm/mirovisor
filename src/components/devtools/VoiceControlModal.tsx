@@ -56,6 +56,9 @@ interface VoiceControlModalProps {
     commandText: string,
     conversationMemory: ConversationTurn[]
   ) => VoiceActionResult | void;
+  conversationMemory?: ConversationTurn[];
+  onUpdateConversationMemory?: React.Dispatch<React.SetStateAction<ConversationTurn[]>> | ((updater: ConversationTurn[] | ((prev: ConversationTurn[]) => ConversationTurn[])) => void);
+  onClearMemory?: () => void;
 }
 
 export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
@@ -63,6 +66,9 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
   onClose,
   activeTenant,
   onExecuteVoiceCommand,
+  conversationMemory: externalConversationMemory,
+  onUpdateConversationMemory,
+  onClearMemory,
 }) => {
   const [isListening, setIsListening] = useState<boolean>(true);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
@@ -76,10 +82,20 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
     'Слушаю вас (Gemini Live Full-Duplex поток активен)...'
   );
   
-  // Full Conversation Memory Array state
-  const [conversationMemory, setConversationMemory] = useState<ConversationTurn[]>(() => {
-    return AiAgentService.getInstance().getVoiceConversationHistory();
+  // Conversation Memory Array state with support for persistent memory passed from App (localStorage)
+  const [localMemory, setLocalMemory] = useState<ConversationTurn[]>(() => {
+    return externalConversationMemory || AiAgentService.getInstance().getVoiceConversationHistory();
   });
+
+  const conversationMemory = externalConversationMemory !== undefined ? externalConversationMemory : localMemory;
+
+  const updateMemory = useCallback((updater: ConversationTurn[] | ((prev: ConversationTurn[]) => ConversationTurn[])) => {
+    if (onUpdateConversationMemory) {
+      onUpdateConversationMemory(updater as any);
+    } else {
+      setLocalMemory(updater);
+    }
+  }, [onUpdateConversationMemory]);
 
   const speechTimerRef = useRef<number | null>(null);
   const progressTimerRef = useRef<number | null>(null);
@@ -123,7 +139,7 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
     // 4. If user initiated barge-in, mark last agent turn as interrupted
     if (wasInterruptedByUser) {
       AiAgentService.getInstance().markLastAgentTurnInterrupted('⚡ Прервано суперадмином на полуслове (Barge-in)!');
-      setConversationMemory((prev) => {
+      updateMemory((prev) => {
         const copy = [...prev];
         for (let i = copy.length - 1; i >= 0; i--) {
           if (copy[i].role === 'agent' && !copy[i].interrupted) {
@@ -139,7 +155,7 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
       });
       setStatusMessage('⚡ Голос агента прерван (Barge-in сработал)! Слушаю вашу новую команду...');
     }
-  }, []);
+  }, [updateMemory]);
 
   // Explicit user interruption action
   const handleInterrupt = useCallback(() => {
@@ -224,18 +240,21 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
     setStatusMessage(`Распознавание интента: "${trimmed}"... Запрос к Gemini Live с передачей контекста диалога...`);
 
     // 1. Record user turn into persistent memory array
-    const userTurn = AiAgentService.getInstance().addVoiceTurn({
+    const userTurn: ConversationTurn = {
+      id: `vt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       role: 'user',
       text: trimmed,
-    });
+    };
     
     // Get snapshot of conversation memory with this new user turn
-    const currentMemory = AiAgentService.getInstance().getVoiceConversationHistory();
-    setConversationMemory(currentMemory);
+    const memoryWithUser = [...conversationMemory, userTurn];
+    updateMemory(memoryWithUser);
+    AiAgentService.getInstance().syncVoiceConversationHistory(memoryWithUser);
 
     setTimeout(() => {
       // 2. Execute command in App with full conversationMemory array passed!
-      const result = onExecuteVoiceCommand(trimmed, currentMemory);
+      const result = onExecuteVoiceCommand(trimmed, memoryWithUser);
       setIsProcessing(false);
 
       const agentReply = result && result.responseSpeech
@@ -245,16 +264,19 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
       const actionNote = result && result.details ? result.details : 'Исполнено в системе';
 
       // 3. Record agent reply into persistent memory array
-      AiAgentService.getInstance().addVoiceTurn({
+      const agentTurn: ConversationTurn = {
+        id: `vt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
         role: 'agent',
         text: agentReply,
         actionResult: actionNote,
         intent: result ? result.intent : 'general',
         affectedEntity: result ? result.affectedEntity : undefined,
-      });
+      };
 
-      const updatedHistory = AiAgentService.getInstance().getVoiceConversationHistory();
-      setConversationMemory(updatedHistory);
+      const finalMemory = [...memoryWithUser, agentTurn];
+      updateMemory(finalMemory);
+      AiAgentService.getInstance().syncVoiceConversationHistory(finalMemory);
       setStatusMessage(`Агент отвечает: воспроизведение голоса... (Вы можете перебить!)`);
 
       // 4. Play audio with barge-in capability
@@ -262,7 +284,7 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
         setStatusMessage('Команда завершена. Готов к следующей голосовой инструкции...');
       });
     }, 500);
-  }, [activeTenant.name, onExecuteVoiceCommand, startAgentSpeaking, stopAgentSpeaking]);
+  }, [activeTenant.name, conversationMemory, onExecuteVoiceCommand, startAgentSpeaking, stopAgentSpeaking, updateMemory]);
 
   // =========================================================================
   // SPEECH RECOGNITION (WEB SPEECH API) FOR HANDS-FREE BARGE-IN
@@ -371,7 +393,11 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
   // Sync memory on modal open
   useEffect(() => {
     if (isOpen) {
-      setConversationMemory(AiAgentService.getInstance().getVoiceConversationHistory());
+      if (externalConversationMemory) {
+        AiAgentService.getInstance().syncVoiceConversationHistory(externalConversationMemory);
+      } else {
+        setLocalMemory(AiAgentService.getInstance().getVoiceConversationHistory());
+      }
       setIsListening(true);
       setStatusMessage('Говорите голосовую команду или вопрос по коду...');
     } else {
@@ -380,12 +406,16 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
     return () => {
       stopAgentSpeaking(false);
     };
-  }, [isOpen, stopAgentSpeaking]);
+  }, [isOpen, stopAgentSpeaking, externalConversationMemory]);
 
   const handleClearHistory = () => {
     stopAgentSpeaking(false);
     AiAgentService.getInstance().clearVoiceConversationHistory();
-    setConversationMemory([]);
+    if (onClearMemory) {
+      onClearMemory();
+    } else {
+      updateMemory([]);
+    }
     setStatusMessage('Память сессии голосового диалога очищена.');
   };
 
@@ -634,6 +664,7 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
             isSpeaking={isSpeaking}
             onReplayCommand={(cmd) => handleProcessVoiceInput(cmd)}
             onInterrupt={handleInterrupt}
+            onClearLog={handleClearHistory}
           />
         </div>
 

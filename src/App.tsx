@@ -75,6 +75,36 @@ export default function App() {
   const [isTerminalOpen, setIsTerminalOpen] = useState<boolean>(false);
   const [isVoiceOpen, setIsVoiceOpen] = useState<boolean>(false);
 
+  // Persistent voice conversation memory stored in localStorage across page refreshes and UI session toggles
+  const [voiceMemory, setVoiceMemory] = useState<ConversationTurn[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('mirovisor_voice_conversation_memory');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load voice conversation memory from localStorage:', err);
+      }
+    }
+    return AiAgentService.getInstance().getVoiceConversationHistory();
+  });
+
+  // Sync voice memory with localStorage and AiAgentService across renders and updates
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('mirovisor_voice_conversation_memory', JSON.stringify(voiceMemory));
+      } catch (err) {
+        console.warn('Failed to save voice conversation memory to localStorage:', err);
+      }
+    }
+    AiAgentService.getInstance().syncVoiceConversationHistory(voiceMemory);
+  }, [voiceMemory]);
+
   // Global Hotkey handlers (Ctrl+V for voice, Cmd+K for search)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -405,7 +435,7 @@ export default function App() {
   // Voice Command parser & portal programming executor with conversational memory
   const handleExecuteVoiceCommand = (
     commandText: string,
-    conversationMemory: ConversationTurn[] = []
+    conversationMemory: ConversationTurn[] = voiceMemory
   ): VoiceActionResult => {
     const text = commandText.toLowerCase().trim();
 
@@ -890,6 +920,16 @@ export const VoiceWidget = createComponentExtension({
         onClose={() => setIsVoiceOpen(false)}
         activeTenant={activeTenant}
         onExecuteVoiceCommand={handleExecuteVoiceCommand}
+        conversationMemory={voiceMemory}
+        onUpdateConversationMemory={setVoiceMemory}
+        onClearMemory={() => {
+          setVoiceMemory([]);
+          try {
+            localStorage.removeItem('mirovisor_voice_conversation_memory');
+          } catch (e) {
+            // ignore
+          }
+        }}
       />
     </div>
   );

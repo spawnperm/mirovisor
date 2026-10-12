@@ -229,6 +229,22 @@ export class AiAgentService {
     return [...this.voiceConversationHistory];
   }
 
+  public syncVoiceConversationHistory(history: Array<{
+    id: string;
+    role: 'user' | 'agent' | 'system';
+    text: string;
+    timestamp: string;
+    actionResult?: string;
+    interrupted?: boolean;
+    intent?: string;
+    affectedEntity?: string;
+    metadata?: Record<string, any>;
+  }>) {
+    if (Array.isArray(history)) {
+      this.voiceConversationHistory = [...history];
+    }
+  }
+
   public addVoiceTurn(turn: {
     role: 'user' | 'agent' | 'system';
     text: string;
