@@ -30,6 +30,7 @@ import { ResourceUtilizationDashboard } from './ResourceUtilizationDashboard';
 import { NatsJetStreamMonitoringWidget } from './NatsJetStreamMonitoringWidget';
 import { D3HistoricalTrendLineChart } from './D3HistoricalTrendLineChart';
 import { PerformanceDashboard } from './PerformanceDashboard';
+import { SystemResourceMonitor } from './SystemResourceMonitor';
 import { LogUtility } from '../../services/logUtility';
 import { useClientLogsSlice } from '../../store/selectors';
 
@@ -49,7 +50,7 @@ interface LokiLog {
 
 export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, metrics }) => {
   const [activeTab, setActiveTab] = useState<
-    'performance' | 'trend_history' | 'nats_jetstream' | 'utilization' | 'prometheus_loki'
+    'performance' | 'system_monitor' | 'trend_history' | 'nats_jetstream' | 'utilization' | 'prometheus_loki'
   >('performance');
 
   const { clientLogs, addClientLog, clearClientLogs } = useClientLogsSlice();
@@ -144,6 +145,18 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
           </button>
 
           <button
+            onClick={() => setActiveTab('system_monitor')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
+              activeTab === 'system_monitor'
+                ? 'bg-cyan-600 text-white shadow-sm'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Cpu className="w-3.5 h-3.5" />
+            Ресурсы Клиента (Web Worker)
+          </button>
+
+          <button
             onClick={() => setActiveTab('trend_history')}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg font-medium transition-colors ${
               activeTab === 'trend_history'
@@ -203,6 +216,8 @@ export const ObservabilityView: React.FC<ObservabilityViewProps> = ({ tenant, me
       <div className="flex-1 overflow-hidden">
         {activeTab === 'performance' ? (
           <PerformanceDashboard tenant={tenant} />
+        ) : activeTab === 'system_monitor' ? (
+          <SystemResourceMonitor tenant={tenant} />
         ) : activeTab === 'trend_history' ? (
           <div className="h-full p-4 overflow-y-auto space-y-4">
             <D3HistoricalTrendLineChart tenant={tenant} height={380} />
