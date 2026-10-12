@@ -12,22 +12,22 @@ import {
   Lock, 
   Zap,
   CheckCircle2,
-  GitCommit
+  GitCommit,
+  Wifi,
+  WifiOff,
+  UserCheck
 } from 'lucide-react';
 import { KanbanCard, ChecklistItem } from '../../types';
+import { 
+  MirovisorCollaborativeProvider, 
+  ProviderPeer, 
+  ConnectionStatus 
+} from '../../services/collaborativeProvider';
 
 interface CollaborativeCardEditorProps {
   card: KanbanCard;
   currentUserName: string;
   onCardUpdate: (updatedCard: KanbanCard) => void;
-}
-
-interface Peer {
-  id: string;
-  name: string;
-  color: string;
-  role: string;
-  status: 'active' | 'typing' | 'idle';
 }
 
 export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = ({
@@ -38,24 +38,28 @@ export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = (
   const [description, setDescription] = useState<string>(card.description);
   const [checklist, setChecklist] = useState<ChecklistItem[]>(card.checklist);
   const [newItemText, setNewItemText] = useState<string>('');
-  const [peers, setPeers] = useState<Peer[]>([
-    { id: '1', name: currentUserName, color: '#38bdf8', role: 'SuperAdmin (Вы)', status: 'active' },
-    { id: '2', name: 'Елена Васильева', color: '#c084fc', role: 'Архитектор R&D', status: 'idle' },
-    { id: '3', name: 'SecurityAgent Bot', color: '#34d399', role: 'Cordis AI', status: 'active' },
+  
+  // Collaborative provider state
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+  const [isSynced, setIsSynced] = useState<boolean>(false);
+  const [peers, setPeers] = useState<ProviderPeer[]>([
+    { id: 'user_self', name: currentUserName, color: '#38bdf8', role: 'SuperAdmin (Вы)', status: 'active' },
+    { id: 'user_rd', name: 'Елена Васильева', color: '#c084fc', role: 'Архитектор R&D', status: 'idle' },
+    { id: 'user_ai', name: 'SecurityAgent Bot', color: '#34d399', role: 'Cordis AI', status: 'active' },
   ]);
   const [crdtStats, setCrdtStats] = useState<{ updatesCount: number; lastSyncTime: string }>({
     updatesCount: 1,
     lastSyncTime: 'Только что',
   });
 
-  // Yjs Document, Text, Array and UndoManager references
+  // Yjs Document, Text, Array, Provider and UndoManager references
   const ydocRef = useRef<Y.Doc | null>(null);
   const yTextRef = useRef<Y.Text | null>(null);
   const yChecklistRef = useRef<Y.Array<ChecklistItem> | null>(null);
   const undoManagerRef = useRef<Y.UndoManager | null>(null);
-  const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
+  const providerRef = useRef<MirovisorCollaborativeProvider | null>(null);
 
-  // Initialize Y.Doc & CRDT structures
+  // Initialize Y.Doc, Collaborative Provider & CRDT structures
   useEffect(() => {
     const doc = new Y.Doc();
     ydocRef.current = doc;
@@ -100,30 +104,38 @@ export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = (
     };
     yChecklist.observe(checklistObserver);
 
-    // Cross-tab real-time sync with BroadcastChannel
-    try {
-      const channelName = `mirovisor_card_${card.id}`;
-      const channel = new BroadcastChannel(channelName);
-      broadcastChannelRef.current = channel;
-
-      doc.on('update', (update: Uint8Array, origin: any) => {
-        if (origin !== 'remote_broadcast') {
-          channel.postMessage(Array.from(update));
+    // Initialize Collaborative Provider (BroadcastChannel + Awareness)
+    const provider = new MirovisorCollaborativeProvider({
+      roomName: `card_${card.id}`,
+      doc: doc,
+      user: {
+        id: `peer_${Math.random().toString(36).substring(2, 7)}`,
+        name: currentUserName,
+        color: '#38bdf8',
+        role: 'SuperAdmin (Вы)',
+      },
+      onPeersChange: (newPeers) => {
+        // Merge simulated team members with remote discovered peers
+        const initialSimulated: ProviderPeer[] = [
+          { id: 'user_rd', name: 'Елена Васильева', color: '#c084fc', role: 'Архитектор R&D', status: 'idle' },
+          { id: 'user_ai', name: 'SecurityAgent Bot', color: '#34d399', role: 'Cordis AI', status: 'active' },
+        ];
+        const combined = [...newPeers];
+        for (const sim of initialSimulated) {
+          if (!combined.some((p) => p.name === sim.name)) {
+            combined.push(sim);
+          }
         }
-      });
+        setPeers(combined);
+      },
+      onStatusChange: (status) => setConnectionStatus(status),
+      onSyncChange: (synced) => setIsSynced(synced),
+    });
 
-      channel.onmessage = (event) => {
-        if (event.data && Array.isArray(event.data)) {
-          const update = new Uint8Array(event.data);
-          Y.applyUpdate(doc, update, 'remote_broadcast');
-        }
-      };
-    } catch (err) {
-      console.warn('BroadcastChannel not supported in environment:', err);
-    }
+    providerRef.current = provider;
 
     return () => {
-      broadcastChannelRef.current?.close();
+      provider.destroy();
       doc.destroy();
     };
   }, [card.id]);
@@ -133,6 +145,8 @@ export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = (
     const yText = yTextRef.current;
     const doc = ydocRef.current;
     if (!yText || !doc) return;
+
+    providerRef.current?.setLocalStatus('typing');
 
     doc.transact(() => {
       yText.delete(0, yText.length);
@@ -145,6 +159,11 @@ export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = (
       checklist,
     };
     onCardUpdate(updatedCard);
+
+    // Reset status back to active after brief delay
+    setTimeout(() => {
+      providerRef.current?.setLocalStatus('active');
+    }, 1200);
   };
 
   // Add checklist item via Y.Array
@@ -262,28 +281,47 @@ export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = (
 
   return (
     <div className="space-y-4 text-xs">
-      {/* Real-time Presence Bar */}
+      {/* Real-time Presence Bar with Collaborative Provider Status */}
       <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-xl flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <div className="p-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-cyan-400">
-            <Radio className="w-4 h-4" />
+            <Radio className="w-4 h-4 animate-pulse" />
           </div>
           <div>
             <div className="font-bold text-white flex items-center gap-2 text-xs">
-              YJS REAL-TIME COLLABORATIVE LAYER
-              <span className="text-[10px] font-mono px-1.5 py-0.2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded font-semibold">
-                CRDT SYNC ONLINE
+              YJS COLLABORATIVE PROVIDER
+              <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-semibold flex items-center gap-1 ${
+                connectionStatus === 'connected'
+                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+              }`}>
+                {connectionStatus === 'connected' ? (
+                  <>
+                    <Wifi className="w-2.5 h-2.5" />
+                    PROVIDER ONLINE
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="w-2.5 h-2.5" />
+                    CONNECTING...
+                  </>
+                )}
               </span>
+              {isSynced && (
+                <span className="text-[10px] font-mono px-1 py-0.2 bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 rounded">
+                  IN SYNC
+                </span>
+              )}
             </div>
             <div className="text-[10px] text-neutral-400 font-mono">
-              Транзакций: {crdtStats.updatesCount} · Синхронизировано: {crdtStats.lastSyncTime}
+              Комната: room_card_{card.id.slice(0, 8)} · Транзакций: {crdtStats.updatesCount} · Синхронизировано: {crdtStats.lastSyncTime}
             </div>
           </div>
         </div>
 
         {/* Active Collaborators Presence Chips */}
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] text-neutral-500 font-mono mr-1">В сессии:</span>
+          <span className="text-[10px] text-neutral-500 font-mono mr-1">Участники:</span>
           {peers.map((peer) => (
             <div
               key={peer.id}
@@ -348,10 +386,10 @@ export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = (
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <h4 className="font-semibold text-neutral-400 uppercase tracking-wider text-[11px]">
-            Описание задачи (Совместное редактирование в реальном времени):
+            Описание задачи (Y.Text в реальном времени):
           </h4>
           <span className="text-[10px] font-mono text-neutral-500">
-            Y.Text CRDT · Изменения мгновенно реплицируются
+            Y.Text CRDT + Provider Sync · Правки синхронизируются мгновенно
           </span>
         </div>
 

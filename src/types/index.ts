@@ -280,3 +280,19 @@ export interface SystemMetric {
   memoryUsageMb: number;
   dbQueriesPerSec: number;
 }
+
+export interface ResourceUtilizationPoint {
+  timestamp: string; // ISO or HH:mm
+  timeLabel: string;
+  cpuCoresUsed: number;
+  cpuLimitCores: number;
+  cpuPercent: number;
+  memoryUsedMb: number;
+  memoryLimitMb: number;
+  storageUsedGb: number;
+  storageLimitGb: number;
+  activePods: number;
+  iops: number;
+  bandwidthMbps: number;
+}
+
