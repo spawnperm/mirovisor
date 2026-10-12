@@ -8,6 +8,29 @@ export interface TenantBranding {
   themeStyle: 'cyber-dark' | 'emerald-minimal' | 'slate-enterprise' | 'violet-glow';
 }
 
+export interface TenantAutoScalingConfig {
+  enabled: boolean;
+  minPods: number;
+  maxPods: number;
+  currentPods: number;
+  targetCpuUtilizationPct: number;
+  targetRpsThreshold: number;
+  scaleUpCooldownSec: number;
+  scaleDownCooldownSec: number;
+  elasticStorageEnabled: boolean;
+  storageUsageThresholdPct: number;
+  autoExpandChunkMb: number;
+  maxStorageCeilingMb: number;
+  alertOnScaleEvent: boolean;
+  lastScaleEvent?: {
+    timestamp: string;
+    action: 'scale_up' | 'scale_down' | 'storage_expanded';
+    reason: string;
+    previousState: string;
+    newState: string;
+  };
+}
+
 export interface TenantConfiguration {
   features: {
     enableCrm: boolean;
@@ -22,6 +45,7 @@ export interface TenantConfiguration {
     apiRateLimitRps: number;
   };
   branding: TenantBranding;
+  autoScaling?: TenantAutoScalingConfig;
 }
 
 export interface Tenant {

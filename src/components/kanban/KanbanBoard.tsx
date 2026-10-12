@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { KanbanCard, CardColumn, CardType, CardPriority } from '../../types';
 import { AiAgentService } from '../../services/aiAgentService';
+import { CollaborativeCardEditor } from './CollaborativeCardEditor';
 
 interface KanbanBoardProps {
   cards: KanbanCard[];
@@ -420,14 +421,15 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
             {/* Modal Body */}
             <div className="p-4 overflow-y-auto space-y-4 text-xs text-neutral-300 flex-1">
-              <div>
-                <h4 className="font-semibold text-neutral-400 mb-1 uppercase tracking-wider text-[11px]">
-                  Описание проблемы и решение:
-                </h4>
-                <p className="leading-relaxed bg-neutral-950 p-3 rounded-lg border border-neutral-800/80">
-                  {selectedCard.description}
-                </p>
-              </div>
+              {/* Real-time Collaborative Editing Layer with Yjs */}
+              <CollaborativeCardEditor
+                card={selectedCard}
+                currentUserName="Алексей Смирнов"
+                onCardUpdate={(updated) => {
+                  onUpdateCard(updated);
+                  setSelectedCard(updated);
+                }}
+              />
 
               {selectedCard.sourceSnippet && (
                 <div>
@@ -439,31 +441,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                   </pre>
                 </div>
               )}
-
-              {/* Subtasks / Checklist */}
-              <div>
-                <h4 className="font-semibold text-neutral-400 mb-2 uppercase tracking-wider text-[11px]">
-                  Чек-лист реализации:
-                </h4>
-                <div className="space-y-1.5">
-                  {selectedCard.checklist.map((item, idx) => (
-                    <label
-                      key={item.id}
-                      className="flex items-center gap-2.5 p-2 bg-neutral-950/70 border border-neutral-800 rounded-md cursor-pointer hover:bg-neutral-950"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={item.done}
-                        onChange={() => toggleChecklistItem(idx)}
-                        className="rounded border-neutral-700 text-cyan-500 focus:ring-0"
-                      />
-                      <span className={item.done ? 'line-through text-neutral-500' : 'text-neutral-200'}>
-                        {item.text}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
 
               {/* Contextual Action Bar based on Card Type */}
               <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-xl space-y-2">

@@ -12,9 +12,17 @@ import {
   Save, 
   ExternalLink,
   Sliders,
-  Sparkles
+  Sparkles,
+  Cpu,
+  Zap,
+  TrendingUp,
+  AlertTriangle,
+  HardDrive,
+  RefreshCw,
+  Clock,
+  Radio
 } from 'lucide-react';
-import { Tenant, TenantConfiguration } from '../../types';
+import { Tenant, TenantConfiguration, TenantAutoScalingConfig } from '../../types';
 
 interface TenantArchitectureViewProps {
   tenants: Tenant[];
@@ -29,7 +37,7 @@ export const TenantArchitectureView: React.FC<TenantArchitectureViewProps> = ({
   onUpdateTenantConfig,
   onCreateTenant,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'branding' | 'patterns' | 'simulator' | 'create'>('branding');
+  const [activeSubTab, setActiveSubTab] = useState<'branding' | 'autoscaling' | 'patterns' | 'simulator' | 'create'>('branding');
   
   // Branding state for current active tenant
   const currentConfig: TenantConfiguration = activeTenant.config || {
@@ -51,10 +59,33 @@ export const TenantArchitectureView: React.FC<TenantArchitectureViewProps> = ({
       customTitle: activeTenant.name,
       themeStyle: 'slate-enterprise',
     },
+    autoScaling: {
+      enabled: true,
+      minPods: 2,
+      maxPods: 10,
+      currentPods: 3,
+      targetCpuUtilizationPct: 70,
+      targetRpsThreshold: 450,
+      scaleUpCooldownSec: 60,
+      scaleDownCooldownSec: 300,
+      elasticStorageEnabled: true,
+      storageUsageThresholdPct: 80,
+      autoExpandChunkMb: 2048,
+      maxStorageCeilingMb: 51200,
+      alertOnScaleEvent: true,
+      lastScaleEvent: {
+        timestamp: '2026-10-11 23:15:00',
+        action: 'scale_up',
+        reason: 'RPS превысил целевой порог (480 > 450 RPS)',
+        previousState: '2 пода (500m CPU)',
+        newState: '3 пода (750m CPU)',
+      },
+    },
   };
 
   const [formConfig, setFormConfig] = useState<TenantConfiguration>(currentConfig);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+  const [scalingAlert, setScalingAlert] = useState<string | null>(null);
 
   // Simulator state
   const [testQuery, setTestQuery] = useState<string>('SELECT * FROM invoices;');
@@ -66,10 +97,120 @@ export const TenantArchitectureView: React.FC<TenantArchitectureViewProps> = ({
   const [newTenantDesc, setNewTenantDesc] = useState<string>('');
   const [newTenantVisibility, setNewTenantVisibility] = useState<Tenant['visibility']>('private');
 
+  const autoScaling: TenantAutoScalingConfig = formConfig.autoScaling || {
+    enabled: true,
+    minPods: 2,
+    maxPods: 10,
+    currentPods: 3,
+    targetCpuUtilizationPct: 70,
+    targetRpsThreshold: 450,
+    scaleUpCooldownSec: 60,
+    scaleDownCooldownSec: 300,
+    elasticStorageEnabled: true,
+    storageUsageThresholdPct: 80,
+    autoExpandChunkMb: 2048,
+    maxStorageCeilingMb: 51200,
+    alertOnScaleEvent: true,
+  };
+
   const handleSaveConfig = () => {
     onUpdateTenantConfig(activeTenant.id, formConfig);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
+  };
+
+  // Auto-scaling Simulator actions
+  const simulateTrafficSurge = (spikeRps: number) => {
+    const neededPods = Math.min(
+      autoScaling.maxPods,
+      Math.max(autoScaling.minPods, Math.ceil(spikeRps / (autoScaling.targetRpsThreshold / 2)))
+    );
+
+    const prevPods = autoScaling.currentPods;
+    const updatedAutoScaling: TenantAutoScalingConfig = {
+      ...autoScaling,
+      currentPods: neededPods,
+      lastScaleEvent: {
+        timestamp: new Date().toLocaleTimeString(),
+        action: 'scale_up',
+        reason: `Всплеск входящего трафика до ${spikeRps} RPS (порог: ${autoScaling.targetRpsThreshold} RPS/под)`,
+        previousState: `${prevPods} пода (${prevPods * 250}m CPU)`,
+        newState: `${neededPods} подов (${neededPods * 250}m CPU, +${Math.round(((neededPods - prevPods) / prevPods) * 100)}% мощности)`,
+      },
+    };
+
+    const nextConfig = {
+      ...formConfig,
+      autoScaling: updatedAutoScaling,
+      quotas: {
+        ...formConfig.quotas,
+        apiRateLimitRps: neededPods * 200,
+      },
+    };
+
+    setFormConfig(nextConfig);
+    onUpdateTenantConfig(activeTenant.id, nextConfig);
+
+    setScalingAlert(`[K8s HPA Auto-scaler] Всплеск нагрузки ${spikeRps} RPS! Масштабировано: ${prevPods} → ${neededPods} подов.`);
+    setTimeout(() => setScalingAlert(null), 5000);
+  };
+
+  const simulateScaleDown = () => {
+    const updatedAutoScaling: TenantAutoScalingConfig = {
+      ...autoScaling,
+      currentPods: autoScaling.minPods,
+      lastScaleEvent: {
+        timestamp: new Date().toLocaleTimeString(),
+        action: 'scale_down',
+        reason: `Трафик нормализовался до 80 RPS. Истек cooldown период (${autoScaling.scaleDownCooldownSec}s).`,
+        previousState: `${autoScaling.currentPods} подов`,
+        newState: `${autoScaling.minPods} пода (минимальный резерв)`,
+      },
+    };
+
+    const nextConfig = {
+      ...formConfig,
+      autoScaling: updatedAutoScaling,
+    };
+
+    setFormConfig(nextConfig);
+    onUpdateTenantConfig(activeTenant.id, nextConfig);
+
+    setScalingAlert(`[K8s HPA Auto-scaler] Трафик снизился. Выполнено охлаждение до ${autoScaling.minPods} подов.`);
+    setTimeout(() => setScalingAlert(null), 5000);
+  };
+
+  const simulateStorageExpansion = () => {
+    const newStorage = Math.min(
+      autoScaling.maxStorageCeilingMb,
+      formConfig.quotas.storageQuotaMb + autoScaling.autoExpandChunkMb
+    );
+
+    const updatedAutoScaling: TenantAutoScalingConfig = {
+      ...autoScaling,
+      lastScaleEvent: {
+        timestamp: new Date().toLocaleTimeString(),
+        action: 'storage_expanded',
+        reason: `Заполнение Garage S3 хранилища превысило порог ${autoScaling.storageUsageThresholdPct}%.`,
+        previousState: `${formConfig.quotas.storageQuotaMb} MB`,
+        newState: `${newStorage} MB (+${autoScaling.autoExpandChunkMb} MB)`,
+      },
+    };
+
+    const nextConfig = {
+      ...formConfig,
+      quotas: {
+        ...formConfig.quotas,
+        storageQuotaMb: newStorage,
+      },
+      autoScaling: updatedAutoScaling,
+    };
+
+    setFormConfig(nextConfig);
+    onUpdateTenantConfig(activeTenant.id, nextConfig);
+
+    setScalingAlert(`[Garage S3 Elastic Storage] Хранилище автоматически расширено на +${autoScaling.autoExpandChunkMb} MB!`);
+    setTimeout(() => setScalingAlert(null), 5000);
   };
 
   const runRlsTestQuery = () => {
@@ -139,6 +280,15 @@ COMMIT;`);
             Брендинг и Квоты
           </button>
           <button
+            onClick={() => setActiveSubTab('autoscaling')}
+            className={`px-3 py-1 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
+              activeSubTab === 'autoscaling' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+            Автомасштабирование (HPA)
+          </button>
+          <button
             onClick={() => setActiveSubTab('patterns')}
             className={`px-3 py-1 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
               activeSubTab === 'patterns' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'
@@ -167,6 +317,362 @@ COMMIT;`);
           </button>
         </div>
       </div>
+
+      {/* Alert Banner */}
+      {scalingAlert && (
+        <div className="p-3 bg-cyan-500/10 border border-cyan-500/30 rounded-xl text-cyan-300 text-xs font-mono flex items-center justify-between animate-pulse">
+          <div className="flex items-center gap-2">
+            <Radio className="w-4 h-4 text-cyan-400" />
+            <span>{scalingAlert}</span>
+          </div>
+          <button onClick={() => setScalingAlert(null)} className="text-neutral-400 hover:text-white text-xs">
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* SUBTAB: RESOURCE AUTO-SCALING CONFIGURATION */}
+      {activeSubTab === 'autoscaling' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 overflow-y-auto">
+          {/* Left: Configuration Form (7 cols) */}
+          <div className="lg:col-span-7 bg-neutral-900/60 border border-neutral-800 rounded-xl p-5 space-y-5 text-xs">
+            {saveSuccess && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-300 font-medium flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4" />
+                Параметры Resource Auto-scaling успешно применены для {activeTenant.name}!
+              </div>
+            )}
+
+            {/* Master Toggle */}
+            <div className="flex items-center justify-between p-3.5 bg-neutral-950 border border-neutral-800 rounded-xl">
+              <div className="space-y-0.5">
+                <h3 className="font-bold text-white flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-cyan-400" />
+                  Автоматическое масштабирование ресурсов (Resource Auto-scaling)
+                </h3>
+                <p className="text-[11px] text-neutral-400">
+                  Динамическая адаптация compute-подов (K8s HPA) и емкости Garage S3 на основе порогов нагрузки.
+                </p>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoScaling.enabled}
+                  onChange={(e) =>
+                    setFormConfig({
+                      ...formConfig,
+                      autoScaling: { ...autoScaling, enabled: e.target.checked },
+                    })
+                  }
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+              </label>
+            </div>
+
+            {/* Compute Scaling Limits (Kubernetes HPA) */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-cyan-400" />
+                1. Вычислительные ресурсы Compute (K8s HPA Pods)
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-neutral-400 block mb-1">Минимум подов (Min Pods)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={autoScaling.minPods}
+                    onChange={(e) =>
+                      setFormConfig({
+                        ...formConfig,
+                        autoScaling: { ...autoScaling, minPods: parseInt(e.target.value) || 1 },
+                      })
+                    }
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 font-mono text-white text-xs"
+                  />
+                  <span className="text-[10px] text-neutral-500">Базовый резерв при нулевой нагрузке</span>
+                </div>
+
+                <div>
+                  <label className="text-neutral-400 block mb-1">Максимум подов (Max Pods Ceiling)</label>
+                  <input
+                    type="number"
+                    min={2}
+                    max={30}
+                    value={autoScaling.maxPods}
+                    onChange={(e) =>
+                      setFormConfig({
+                        ...formConfig,
+                        autoScaling: { ...autoScaling, maxPods: parseInt(e.target.value) || 10 },
+                      })
+                    }
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 font-mono text-white text-xs"
+                  />
+                  <span className="text-[10px] text-neutral-500">Верхний лимит для защиты бюджета</span>
+                </div>
+              </div>
+
+              {/* Threshold Sliders */}
+              <div className="space-y-3 p-3 bg-neutral-950/80 border border-neutral-800 rounded-xl">
+                <div>
+                  <div className="flex justify-between text-neutral-300 mb-1">
+                    <span>Порог целевой загрузки CPU (Target CPU Utilization)</span>
+                    <span className="font-mono text-cyan-400 font-bold">{autoScaling.targetCpuUtilizationPct}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={30}
+                    max={90}
+                    step={5}
+                    value={autoScaling.targetCpuUtilizationPct}
+                    onChange={(e) =>
+                      setFormConfig({
+                        ...formConfig,
+                        autoScaling: { ...autoScaling, targetCpuUtilizationPct: parseInt(e.target.value) },
+                      })
+                    }
+                    className="w-full accent-cyan-500 cursor-pointer"
+                  />
+                  <span className="text-[10px] text-neutral-500">
+                    При превышении {autoScaling.targetCpuUtilizationPct}% запускается горизонтальное масштабирование
+                  </span>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-neutral-300 mb-1">
+                    <span>Порог трафика RPS (RPS Threshold per Instance)</span>
+                    <span className="font-mono text-cyan-400 font-bold">{autoScaling.targetRpsThreshold} RPS</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={100}
+                    max={1500}
+                    step={50}
+                    value={autoScaling.targetRpsThreshold}
+                    onChange={(e) =>
+                      setFormConfig({
+                        ...formConfig,
+                        autoScaling: { ...autoScaling, targetRpsThreshold: parseInt(e.target.value) },
+                      })
+                    }
+                    className="w-full accent-cyan-500 cursor-pointer"
+                  />
+                  <span className="text-[10px] text-neutral-500">
+                    Порог запросов в секунду на экземпляр пода NestJS API
+                  </span>
+                </div>
+              </div>
+
+              {/* Cooldown Timers */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-neutral-400 block mb-1">Scale-Up Cooldown (сек)</label>
+                  <input
+                    type="number"
+                    value={autoScaling.scaleUpCooldownSec}
+                    onChange={(e) =>
+                      setFormConfig({
+                        ...formConfig,
+                        autoScaling: { ...autoScaling, scaleUpCooldownSec: parseInt(e.target.value) || 60 },
+                      })
+                    }
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 font-mono text-white text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-neutral-400 block mb-1">Scale-Down Cooldown (сек)</label>
+                  <input
+                    type="number"
+                    value={autoScaling.scaleDownCooldownSec}
+                    onChange={(e) =>
+                      setFormConfig({
+                        ...formConfig,
+                        autoScaling: { ...autoScaling, scaleDownCooldownSec: parseInt(e.target.value) || 300 },
+                      })
+                    }
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 font-mono text-white text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Elastic Storage Section (Garage S3) */}
+            <div className="space-y-3 pt-3 border-t border-neutral-800">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                <HardDrive className="w-4 h-4 text-emerald-400" />
+                2. Эластичное хранилище данных (Garage S3 Elasticity)
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-neutral-400 block mb-1">Порог расширения (%)</label>
+                  <input
+                    type="number"
+                    min={50}
+                    max={95}
+                    value={autoScaling.storageUsageThresholdPct}
+                    onChange={(e) =>
+                      setFormConfig({
+                        ...formConfig,
+                        autoScaling: { ...autoScaling, storageUsageThresholdPct: parseInt(e.target.value) || 80 },
+                      })
+                    }
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 font-mono text-white text-xs"
+                  />
+                  <span className="text-[10px] text-neutral-500">При заполнении &gt; {autoScaling.storageUsageThresholdPct}%</span>
+                </div>
+
+                <div>
+                  <label className="text-neutral-400 block mb-1">Шаг расширения (MB)</label>
+                  <input
+                    type="number"
+                    value={autoScaling.autoExpandChunkMb}
+                    onChange={(e) =>
+                      setFormConfig({
+                        ...formConfig,
+                        autoScaling: { ...autoScaling, autoExpandChunkMb: parseInt(e.target.value) || 2048 },
+                      })
+                    }
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 font-mono text-white text-xs"
+                  />
+                  <span className="text-[10px] text-neutral-500">+{autoScaling.autoExpandChunkMb} MB за шаг</span>
+                </div>
+
+                <div>
+                  <label className="text-neutral-400 block mb-1">Потолок диска (MB)</label>
+                  <input
+                    type="number"
+                    value={autoScaling.maxStorageCeilingMb}
+                    onChange={(e) =>
+                      setFormConfig({
+                        ...formConfig,
+                        autoScaling: { ...autoScaling, maxStorageCeilingMb: parseInt(e.target.value) || 51200 },
+                      })
+                    }
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 font-mono text-white text-xs"
+                  />
+                  <span className="text-[10px] text-neutral-500">Предел квоты тенанта</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={handleSaveConfig}
+                className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-medium rounded-lg text-xs flex items-center gap-1.5 shadow-md transition-all"
+              >
+                <Save className="w-3.5 h-3.5" />
+                Сохранить политику автомасштабирования
+              </button>
+            </div>
+          </div>
+
+          {/* Right: Live Simulator & HPA Event Stream (5 cols) */}
+          <div className="lg:col-span-5 bg-neutral-900/60 border border-neutral-800 rounded-xl p-5 flex flex-col gap-4 text-xs">
+            <h3 className="font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-emerald-400" />
+              Интерактивный симулятор нагрузки HPA
+            </h3>
+
+            {/* Current Real-time Node Status Box */}
+            <div className="p-4 bg-neutral-950 border border-neutral-800 rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-neutral-400">Активные поды тенанта:</span>
+                <span className="text-emerald-400 font-mono font-bold text-sm flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  {autoScaling.currentPods} / {autoScaling.maxPods} подов
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                <span>Выделенный CPU:</span>
+                <span className="font-mono text-white">{autoScaling.currentPods * 250}m vCPU</span>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                <span>Лимит памяти RAM:</span>
+                <span className="font-mono text-white">{autoScaling.currentPods * 512} MB</span>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-neutral-400">
+                <span>Квота Garage S3:</span>
+                <span className="font-mono text-cyan-300">
+                  {formConfig.quotas.storageQuotaMb} MB ({Math.round((activeTenant.storageUsedMb / formConfig.quotas.storageQuotaMb) * 100)}% занято)
+                </span>
+              </div>
+            </div>
+
+            {/* Traffic Injection Controls */}
+            <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-xl space-y-2">
+              <span className="text-[10px] font-mono text-cyan-400 uppercase font-bold block">
+                Стресс-тестирование порогов (Traffic Triggers):
+              </span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => simulateTrafficSurge(850)}
+                  className="p-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-cyan-300 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-400" />
+                  Всплеск 850 RPS (Scale-Up)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={simulateScaleDown}
+                  className="p-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Спад 80 RPS (Cooldown)
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={simulateStorageExpansion}
+                className="w-full p-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-emerald-300 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <HardDrive className="w-3.5 h-3.5" />
+                Смоделировать порог &gt;85% (Expand +2GB)
+              </button>
+            </div>
+
+            {/* Last Scaling Event Log */}
+            <div className="space-y-2 flex-1 flex flex-col">
+              <span className="text-[10px] font-mono text-neutral-400 uppercase font-bold block">
+                Журнал событий автомасштабирования (HPA Events):
+              </span>
+
+              <div className="p-3 bg-black/90 border border-neutral-800 rounded-xl text-neutral-300 font-mono text-[11px] space-y-1.5 flex-1 overflow-y-auto">
+                {autoScaling.lastScaleEvent ? (
+                  <div>
+                    <div className="flex items-center justify-between text-neutral-500 text-[10px] pb-1 border-b border-neutral-850">
+                      <span className="text-cyan-400 font-bold uppercase">
+                        [{autoScaling.lastScaleEvent.action.toUpperCase()}]
+                      </span>
+                      <span>{autoScaling.lastScaleEvent.timestamp}</span>
+                    </div>
+                    <div className="mt-1 text-white font-medium">{autoScaling.lastScaleEvent.reason}</div>
+                    <div className="text-neutral-400 text-[10px] mt-1">
+                      {autoScaling.lastScaleEvent.previousState} ➔{' '}
+                      <span className="text-emerald-400 font-bold">{autoScaling.lastScaleEvent.newState}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-neutral-600 italic">Событий автомасштабирования пока не зафиксировано.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SUBTAB: BRANDING & CONFIGURATION */}
       {activeSubTab === 'branding' && (
