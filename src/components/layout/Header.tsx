@@ -19,6 +19,7 @@ import {
   Lock,
   Building,
   FolderTree,
+  Check,
   X
 } from 'lucide-react';
 import { Tenant, User } from '../../types';
@@ -68,7 +69,33 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [showTenantDropdown, setShowTenantDropdown] = useState<boolean>(false);
   const [tenantSearchQuery, setTenantSearchQuery] = useState<string>('');
-  const [expandedTenantIds, setExpandedTenantIds] = useState<Set<string>>(() => new Set(['tenant_acme', 'tenant_betalabs']));
+  const [expandedTenantIds, setExpandedTenantIds] = useState<Set<string>>(
+    () => new Set(['tenant_acme', 'tenant_betalabs', 'tenant_nordic', 'tenant_cybershield'])
+  );
+
+  // Set of all tenant IDs that act as parents to other tenants
+  const allParentTenantIds = useMemo(() => {
+    const parentIds = new Set<string>();
+    tenants.forEach((t) => {
+      if (t.parentTenantId) {
+        parentIds.add(t.parentTenantId);
+      }
+    });
+    return parentIds;
+  }, [tenants]);
+
+  // Ancestor chain for active tenant to show hierarchical breadcrumbs
+  const activeTenantAncestors = useMemo(() => {
+    const ancestors: Tenant[] = [];
+    let current = activeTenant;
+    while (current?.parentTenantId) {
+      const parent = tenants.find((t) => t.id === current.parentTenantId);
+      if (!parent) break;
+      ancestors.unshift(parent);
+      current = parent;
+    }
+    return ancestors;
+  }, [activeTenant, tenants]);
 
   const toggleExpand = (tenantId: string) => {
     setExpandedTenantIds((prev) => {
@@ -137,6 +164,133 @@ export const Header: React.FC<HeaderProps> = ({
       .filter((r): r is TenantTreeNode => r !== null);
   }, [tenants, tenantSearchQuery]);
 
+  const isDescendantActive = (node: TenantTreeNode): boolean => {
+    return node.children.some(
+      (child) => child.tenant.id === activeTenant.id || isDescendantActive(child)
+    );
+  };
+
+  // Recursive renderer for tenants at any hierarchical depth
+  const renderTreeNode = (node: TenantTreeNode, depth: number = 0): React.ReactNode => {
+    const hasChildren = node.children.length > 0;
+    const isExpanded =
+      expandedTenantIds.has(node.tenant.id) ||
+      (tenantSearchQuery.trim().length > 0 && hasChildren);
+    const isActive = node.tenant.id === activeTenant.id;
+    const hasActiveChild = isDescendantActive(node);
+
+    return (
+      <div key={node.tenant.id} className="space-y-1">
+        <div
+          className={`group/item w-full text-left p-1.5 rounded-lg flex items-center justify-between transition-all ${
+            isActive
+              ? 'bg-cyan-950/60 border border-cyan-700 text-white font-semibold shadow-xs ring-1 ring-cyan-500/20'
+              : hasActiveChild
+              ? 'bg-neutral-850/80 border border-neutral-750 text-neutral-200'
+              : 'text-neutral-300 hover:bg-neutral-800/80 border border-transparent'
+          }`}
+        >
+          {/* Left toggle or spacer, tree connector glyph if depth > 0 */}
+          <div className="flex items-center gap-1 shrink-0">
+            {depth > 0 && (
+              <CornerDownRight className="w-3.5 h-3.5 text-neutral-600 group-hover/item:text-cyan-400 shrink-0 mr-0.5" />
+            )}
+            {hasChildren ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleExpand(node.tenant.id);
+                }}
+                className="p-1 text-neutral-400 hover:text-white rounded hover:bg-neutral-700/60 transition-colors"
+                title={isExpanded ? 'Свернуть подразделы' : 'Развернуть подразделы'}
+              >
+                <ChevronRight
+                  className={`w-3.5 h-3.5 transition-transform duration-150 ${
+                    isExpanded ? 'rotate-90 text-cyan-400' : ''
+                  }`}
+                />
+              </button>
+            ) : depth === 0 ? (
+              <span className="w-5" />
+            ) : null}
+          </div>
+
+          {/* Node details */}
+          <div
+            className="min-w-0 flex-1 mr-2 cursor-pointer"
+            onClick={() => {
+              onSelectTenant(node.tenant);
+              setShowTenantDropdown(false);
+              setTenantSearchQuery('');
+            }}
+          >
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="truncate font-medium text-xs">
+                {node.tenant.name}
+              </span>
+              {node.tenant.tier === 'holding' && (
+                <span className="text-[8px] px-1.5 py-0.2 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded font-mono font-medium">
+                  ХОЛДИНГ
+                </span>
+              )}
+              {node.tenant.tier === 'division' && (
+                <span className="text-[8px] px-1.5 py-0.2 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded font-mono">
+                  ДИВИЗИОН
+                </span>
+              )}
+              {node.tenant.tier === 'project' && (
+                <span className="text-[8px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded font-mono">
+                  ПРОЕКТ
+                </span>
+              )}
+              {node.tenant.tier === 'sandbox' && (
+                <span className="text-[8px] px-1.5 py-0.2 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded font-mono">
+                  SANDBOX
+                </span>
+              )}
+              {isActive && (
+                <span className="text-[8px] px-1.5 py-0.2 bg-cyan-500/20 text-cyan-300 rounded font-mono font-medium">
+                  АКТИВЕН
+                </span>
+              )}
+              {!isActive && hasActiveChild && (
+                <span className="text-[8px] px-1 py-0.2 bg-neutral-800 text-cyan-400/80 rounded font-mono">
+                  содержит активный
+                </span>
+              )}
+            </div>
+            <div className="text-[10px] text-neutral-500 font-mono truncate">
+              {node.tenant.schema} · {node.tenant.visibility} · {node.tenant.memberCount} уч.
+              {hasChildren && ` · ${node.children.length} дочерних`}
+            </div>
+          </div>
+
+          {/* Right indicator */}
+          <div className="flex items-center gap-1 shrink-0">
+            {isActive ? (
+              <span className="flex items-center justify-center w-4 h-4 rounded-full bg-cyan-500/20 text-cyan-400">
+                <Check className="w-3 h-3 stroke-[2.5]" />
+              </span>
+            ) : hasActiveChild ? (
+              <span
+                className="w-2 h-2 rounded-full bg-cyan-500/60 ring-2 ring-cyan-500/20"
+                title="Ветка содержит активный тенант"
+              />
+            ) : null}
+          </div>
+        </div>
+
+        {/* Nested Children Tree */}
+        {hasChildren && isExpanded && (
+          <div className="ml-3 pl-2.5 border-l-2 border-cyan-900/40 space-y-1 py-0.5 relative">
+            {node.children.map((child) => renderTreeNode(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const tabs: { id: NavTabId; label: string; icon: React.ReactNode }[] = [
     { id: 'visualizer', label: 'Визуализатор', icon: <Network className="w-3.5 h-3.5" /> },
     { id: 'pipelines', label: 'CI/CD Пайплайны', icon: <Terminal className="w-3.5 h-3.5" /> },
@@ -180,17 +334,29 @@ export const Header: React.FC<HeaderProps> = ({
                   setShowTenantDropdown(!showTenantDropdown);
                   if (!showTenantDropdown) setTenantSearchQuery('');
                 }}
-                className="group flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-neutral-900/90 hover:bg-neutral-850 border border-neutral-800 hover:border-cyan-500/50 text-[11px] font-mono transition-all text-left shadow-xs"
-                title="Сменить рабочий тенант"
+                className="group flex items-center gap-2 px-2 py-1 rounded-md bg-neutral-900/90 hover:bg-neutral-850 border border-neutral-800 hover:border-cyan-500/50 text-[11px] font-mono transition-all text-left shadow-xs"
+                title="Сменить рабочий тенант (иерархическое дерево)"
               >
-                <Building className="w-3 h-3 text-cyan-400 group-hover:text-cyan-300 shrink-0" />
-                <span className="font-semibold text-neutral-200 group-hover:text-white truncate max-w-[150px]">
-                  {activeTenant.name}
-                </span>
-                <span className="text-[10px] text-neutral-500 font-mono">
-                  ({activeTenant.schema})
-                </span>
-                <ChevronDown className={`w-3 h-3 text-neutral-400 transition-transform duration-200 ml-0.5 group-hover:text-cyan-400 ${showTenantDropdown ? 'rotate-180 text-cyan-400' : ''}`} />
+                <div className="flex items-center gap-1.5">
+                  <Building className="w-3.5 h-3.5 text-cyan-400 group-hover:text-cyan-300 shrink-0" />
+                  <div className="flex flex-col text-left leading-tight">
+                    {activeTenantAncestors.length > 0 && (
+                      <span className="text-[9px] text-cyan-400/90 font-mono flex items-center gap-0.5 font-medium truncate max-w-[190px]">
+                        {activeTenantAncestors.map((a) => a.name).join(' › ')}
+                        <ChevronRight className="w-2.5 h-2.5 inline shrink-0 text-cyan-600" />
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-neutral-200 group-hover:text-white truncate max-w-[160px]">
+                        {activeTenant.name}
+                      </span>
+                      <span className="text-[10px] text-neutral-500 font-mono">
+                        ({activeTenant.schema})
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <ChevronDown className={`w-3 h-3 text-neutral-400 transition-transform duration-200 ml-0.5 group-hover:text-cyan-400 shrink-0 ${showTenantDropdown ? 'rotate-180 text-cyan-400' : ''}`} />
               </button>
 
               {showTenantDropdown && (
@@ -202,7 +368,7 @@ export const Header: React.FC<HeaderProps> = ({
                       setTenantSearchQuery('');
                     }}
                   />
-                  <div className="absolute left-0 mt-1.5 w-80 bg-neutral-900/95 backdrop-blur-md border border-neutral-800 rounded-xl shadow-2xl p-2 z-50 text-xs flex flex-col">
+                  <div className="absolute left-0 mt-1.5 w-88 bg-neutral-900/95 backdrop-blur-md border border-neutral-800 rounded-xl shadow-2xl p-2 z-50 text-xs flex flex-col">
                     <div className="text-[10px] font-mono uppercase text-neutral-400 px-2 py-1 flex items-center justify-between border-b border-neutral-800/80 mb-2">
                       <span className="flex items-center gap-1.5 font-semibold text-neutral-300">
                         <FolderTree className="w-3.5 h-3.5 text-cyan-400" />
@@ -215,11 +381,11 @@ export const Header: React.FC<HeaderProps> = ({
                             if (expandedTenantIds.size > 0) {
                               setExpandedTenantIds(new Set());
                             } else {
-                              setExpandedTenantIds(new Set(tenants.map((t) => t.id)));
+                              setExpandedTenantIds(new Set(allParentTenantIds));
                             }
                           }}
                           className="text-[10px] text-cyan-400 hover:text-cyan-300 hover:underline transition-colors lowercase"
-                          title="Развернуть/свернуть все уровни"
+                          title="Развернуть/свернуть все уровни иерархии"
                         >
                           {expandedTenantIds.size > 0 ? 'свернуть все' : 'развернуть все'}
                         </button>
@@ -258,134 +424,13 @@ export const Header: React.FC<HeaderProps> = ({
                     )}
 
                     {/* Tenants hierarchical tree view */}
-                    <div className="max-h-72 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                    <div className="max-h-80 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
                       {hierarchicalRoots.length === 0 ? (
                         <div className="py-6 text-center text-neutral-500 text-xs font-mono">
                           Тенанты не найдены по запросу «{tenantSearchQuery}»
                         </div>
                       ) : (
-                        hierarchicalRoots.map((rootNode) => {
-                          const hasChildren = rootNode.children.length > 0;
-                          const isExpanded = expandedTenantIds.has(rootNode.tenant.id);
-                          const isActive = rootNode.tenant.id === activeTenant.id;
-                          const hasActiveChild = rootNode.children.some((c) => c.tenant.id === activeTenant.id);
-
-                          return (
-                            <div key={rootNode.tenant.id} className="space-y-1">
-                              {/* Parent / Root Tenant Card */}
-                              <div
-                                className={`group/item w-full text-left p-2 rounded-lg flex items-center justify-between transition-all ${
-                                  isActive
-                                    ? 'bg-cyan-950/50 border border-cyan-800/70 text-white font-semibold shadow-xs'
-                                    : hasActiveChild
-                                    ? 'bg-neutral-850/80 border border-neutral-750 text-neutral-200'
-                                    : 'text-neutral-300 hover:bg-neutral-800/80 border border-transparent'
-                                }`}
-                              >
-                                {hasChildren && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleExpand(rootNode.tenant.id);
-                                    }}
-                                    className="p-1 -ml-1 mr-1 text-neutral-400 hover:text-white rounded hover:bg-neutral-700/50 transition-colors"
-                                    title={isExpanded ? 'Свернуть подразделы' : 'Развернуть подразделы'}
-                                  >
-                                    <ChevronRight
-                                      className={`w-3.5 h-3.5 transition-transform duration-150 ${
-                                        isExpanded ? 'rotate-90 text-cyan-400' : ''
-                                      }`}
-                                    />
-                                  </button>
-                                )}
-
-                                <div
-                                  className="min-w-0 flex-1 mr-2 cursor-pointer"
-                                  onClick={() => {
-                                    onSelectTenant(rootNode.tenant);
-                                    setShowTenantDropdown(false);
-                                    setTenantSearchQuery('');
-                                  }}
-                                >
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="truncate font-medium">{rootNode.tenant.name}</span>
-                                    {rootNode.tenant.tier === 'holding' && (
-                                      <span className="text-[9px] px-1.5 py-0.2 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded font-mono font-medium">
-                                        ХОЛДИНГ
-                                      </span>
-                                    )}
-                                    {isActive && (
-                                      <span className="text-[9px] px-1.5 py-0.2 bg-cyan-500/20 text-cyan-300 rounded font-mono font-medium">
-                                        АКТИВЕН
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="text-[10px] text-neutral-500 font-mono truncate">
-                                    {rootNode.tenant.schema} · {rootNode.tenant.visibility} · {rootNode.tenant.memberCount} уч.
-                                    {hasChildren && ` · ${rootNode.children.length} дочерних`}
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  {isActive && (
-                                    <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400" />
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Nested Children Tree */}
-                              {hasChildren && isExpanded && (
-                                <div className="ml-4 pl-3 border-l-2 border-cyan-900/40 space-y-1 py-0.5 relative">
-                                  {rootNode.children.map((childNode, idx) => {
-                                    const isChildActive = childNode.tenant.id === activeTenant.id;
-                                    return (
-                                      <div
-                                        key={childNode.tenant.id}
-                                        onClick={() => {
-                                          onSelectTenant(childNode.tenant);
-                                          setShowTenantDropdown(false);
-                                          setTenantSearchQuery('');
-                                        }}
-                                        className={`group/child w-full text-left p-1.5 rounded-lg flex items-center justify-between cursor-pointer transition-colors relative ${
-                                          isChildActive
-                                            ? 'bg-cyan-950/45 border border-cyan-800/60 text-white font-semibold'
-                                            : 'text-neutral-300 hover:bg-neutral-800/70 border border-transparent'
-                                        }`}
-                                      >
-                                        {/* Tree connector branch glyph */}
-                                        <div className="min-w-0 flex-1 mr-2 flex items-start gap-1.5">
-                                          <CornerDownRight className="w-3.5 h-3.5 text-neutral-600 group-hover/child:text-cyan-400 mt-0.5 shrink-0" />
-                                          <div className="min-w-0">
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                              <span className="truncate">{childNode.tenant.name}</span>
-                                              {childNode.tenant.tier === 'division' && (
-                                                <span className="text-[8px] px-1 py-0.2 bg-neutral-800 text-neutral-400 border border-neutral-700 rounded font-mono">
-                                                  ДИВИЗИОН
-                                                </span>
-                                              )}
-                                              {isChildActive && (
-                                                <span className="text-[8px] px-1.5 py-0.2 bg-cyan-500/20 text-cyan-300 rounded font-mono font-medium">
-                                                  АКТИВЕН
-                                                </span>
-                                              )}
-                                            </div>
-                                            <div className="text-[10px] text-neutral-500 font-mono truncate">
-                                              {childNode.tenant.schema} · {childNode.tenant.visibility} · {childNode.tenant.memberCount} уч.
-                                            </div>
-                                          </div>
-                                        </div>
-                                        {isChildActive && (
-                                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400 shrink-0" />
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })
+                        hierarchicalRoots.map((rootNode) => renderTreeNode(rootNode, 0))
                       )}
                     </div>
                   </div>
