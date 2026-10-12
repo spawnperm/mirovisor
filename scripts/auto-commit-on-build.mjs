@@ -57,8 +57,12 @@ function autoCommitAndPushInDir(dirPath) {
   const hasK8s = statusLines.some((l) => l.includes('k8s') || l.includes('nginx'));
   const hasContracts = statusLines.some((l) => l.includes('schemas') || l.includes('openapi'));
   const hasDocs = statusLines.some((l) => l.includes('docs') || l.includes('adr') || l.includes('c4-model'));
+  const hasA11y = statusLines.some((l) => l.includes('Accessibility') || l.includes('a11y') || l.includes('Header') || l.includes('SearchModal') || l.includes('index.css'));
 
-  if (hasK8s) {
+  if (hasA11y) {
+    scope = 'ui-a11y';
+    message = 'implement WCAG 2.1 AA accessibility controls, domain-clustered tabs, and keyboard search';
+  } else if (hasK8s) {
     scope = 'infra';
     message = 'add Kubernetes manifests, Nginx reverse proxy, and Zod API contracts';
   } else if (hasContracts) {

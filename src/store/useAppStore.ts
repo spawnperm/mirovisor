@@ -115,6 +115,20 @@ export interface AppState {
   telemetryEvents: import('../types').ProductTelemetryEvent[];
   recordTelemetryEvent: (event: Omit<import('../types').ProductTelemetryEvent, 'id' | 'timestamp' | 'tenantId' | 'userId'>) => void;
 
+  // Accessibility & UX Preferences (WCAG 2.1 AA)
+  highContrast: boolean;
+  setHighContrast: (enabled: boolean) => void;
+  fontSizePreference: 'normal' | 'large' | 'xlarge';
+  setFontSizePreference: (pref: 'normal' | 'large' | 'xlarge') => void;
+  reducedMotion: boolean;
+  setReducedMotion: (enabled: boolean) => void;
+  enhancedFocusRings: boolean;
+  setEnhancedFocusRings: (enabled: boolean) => void;
+  isA11yPanelOpen: boolean;
+  setA11yPanelOpen: (open: boolean) => void;
+  announcementMessage: string | null;
+  announceToScreenReader: (msg: string) => void;
+
   // Reset UI State
   resetUiState: () => void;
 }
@@ -148,7 +162,10 @@ const loadStoredMacros = (): VoiceMacro[] => {
 export const useAppStore = create<AppState>((set, get) => ({
   // Navigation & Modals initial state
   activeTab: 'audit',
-  setActiveTab: (tab) => set({ activeTab: tab }),
+  setActiveTab: (tab) => {
+    set({ activeTab: tab });
+    get().announceToScreenReader(`Переход в раздел ${tab}`);
+  },
   isSearchOpen: false,
   setSearchOpen: (open) => set({ isSearchOpen: open }),
   isTerminalOpen: false,
@@ -157,6 +174,39 @@ export const useAppStore = create<AppState>((set, get) => ({
   setVoiceOpen: (open) => set({ isVoiceOpen: open }),
   isMacroRegistryOpen: false,
   setMacroRegistryOpen: (open) => set({ isMacroRegistryOpen: open }),
+
+  // Accessibility preferences initial state (WCAG 2.1 AA)
+  highContrast: typeof window !== 'undefined' ? localStorage.getItem('mirovisor_a11y_contrast') === 'true' : false,
+  setHighContrast: (enabled) => {
+    if (typeof window !== 'undefined') localStorage.setItem('mirovisor_a11y_contrast', String(enabled));
+    set({ highContrast: enabled });
+  },
+  fontSizePreference: (typeof window !== 'undefined' ? (localStorage.getItem('mirovisor_a11y_font_size') as 'normal' | 'large' | 'xlarge') : 'normal') || 'normal',
+  setFontSizePreference: (pref) => {
+    if (typeof window !== 'undefined') localStorage.setItem('mirovisor_a11y_font_size', pref);
+    set({ fontSizePreference: pref });
+  },
+  reducedMotion: typeof window !== 'undefined' ? localStorage.getItem('mirovisor_a11y_reduced_motion') === 'true' : false,
+  setReducedMotion: (enabled) => {
+    if (typeof window !== 'undefined') localStorage.setItem('mirovisor_a11y_reduced_motion', String(enabled));
+    set({ reducedMotion: enabled });
+  },
+  enhancedFocusRings: typeof window !== 'undefined' ? localStorage.getItem('mirovisor_a11y_focus') === 'true' : true,
+  setEnhancedFocusRings: (enabled) => {
+    if (typeof window !== 'undefined') localStorage.setItem('mirovisor_a11y_focus', String(enabled));
+    set({ enhancedFocusRings: enabled });
+  },
+  isA11yPanelOpen: false,
+  setA11yPanelOpen: (open) => set({ isA11yPanelOpen: open }),
+  announcementMessage: null,
+  announceToScreenReader: (msg) => {
+    set({ announcementMessage: msg });
+    setTimeout(() => {
+      if (get().announcementMessage === msg) {
+        set({ announcementMessage: null });
+      }
+    }, 4000);
+  },
 
   // Tenants & User initial state
   tenants: INITIAL_TENANTS,

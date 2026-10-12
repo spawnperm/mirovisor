@@ -81,4 +81,28 @@ describe('useAppStore (Zustand Global State)', () => {
       expect(lastAgentTurn.text).toContain('Исполнен голосовой макрос');
     }
   });
+
+  it('manages WCAG 2.1 AA accessibility preferences and announcements', () => {
+    const store = useAppStore.getState();
+
+    // High contrast
+    store.setHighContrast(true);
+    expect(useAppStore.getState().highContrast).toBe(true);
+
+    // Font scaling
+    store.setFontSizePreference('large');
+    expect(useAppStore.getState().fontSizePreference).toBe('large');
+
+    // Reduced motion
+    store.setReducedMotion(true);
+    expect(useAppStore.getState().reducedMotion).toBe(true);
+
+    // Enhanced focus rings
+    store.setEnhancedFocusRings(true);
+    expect(useAppStore.getState().enhancedFocusRings).toBe(true);
+
+    // Screen reader announcement
+    store.announceToScreenReader('Тестовое оповещение для скринридера');
+    expect(useAppStore.getState().announcementMessage).toBe('Тестовое оповещение для скринридера');
+  });
 });

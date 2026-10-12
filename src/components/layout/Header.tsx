@@ -21,7 +21,9 @@ import {
   FolderTree,
   Check,
   X,
-  Cpu
+  Cpu,
+  Eye,
+  Sliders
 } from 'lucide-react';
 import { Tenant, User } from '../../types';
 
@@ -48,6 +50,8 @@ export type NavTabId =
   | 'wiki'
   | 'devtools';
 
+export type NavigationDomain = 'all' | 'core' | 'engineering' | 'platform' | 'business';
+
 interface HeaderProps {
   activeTab: NavTabId;
   onTabChange: (tab: NavTabId) => void;
@@ -58,6 +62,7 @@ interface HeaderProps {
   onOpenSearch: () => void;
   onOpenTerminal: () => void;
   onOpenVoice: () => void;
+  onOpenA11y?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -70,7 +75,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSearch,
   onOpenTerminal,
   onOpenVoice,
+  onOpenA11y,
 }) => {
+  const [selectedDomain, setSelectedDomain] = useState<NavigationDomain>('all');
   const [showTenantDropdown, setShowTenantDropdown] = useState<boolean>(false);
   const [tenantSearchQuery, setTenantSearchQuery] = useState<string>('');
   const [expandedTenantIds, setExpandedTenantIds] = useState<Set<string>>(
@@ -295,24 +302,29 @@ export const Header: React.FC<HeaderProps> = ({
     );
   };
 
-  const tabs: { id: NavTabId; label: string; icon: React.ReactNode }[] = [
-    { id: 'dashboard', label: 'Сводный Обзор', icon: <Activity className="w-3.5 h-3.5 text-cyan-400" /> },
-    { id: 'audit', label: 'Аудит & Модернизация', icon: <Cpu className="w-3.5 h-3.5 text-cyan-400" /> },
-    { id: 'visualizer', label: 'Визуализатор', icon: <Network className="w-3.5 h-3.5" /> },
-    { id: 'pipelines', label: 'CI/CD Пайплайны', icon: <Terminal className="w-3.5 h-3.5" /> },
-    { id: 'kanban', label: 'Канбан Идей', icon: <Layers className="w-3.5 h-3.5" /> },
-    { id: 'tenants', label: 'Мультитенантность', icon: <Building className="w-3.5 h-3.5" /> },
-    { id: 'pluginstudio', label: 'Backstage Студия', icon: <Sparkles className="w-3.5 h-3.5" /> },
-    { id: 'crm', label: 'Gauzy ERP', icon: <Briefcase className="w-3.5 h-3.5" /> },
-    { id: 'univer', label: 'Univer Office', icon: <Sparkles className="w-3.5 h-3.5" /> },
-    { id: 'plugins', label: 'Каталог Плагинов', icon: <Boxes className="w-3.5 h-3.5" /> },
-    { id: 'social', label: 'Сообщество', icon: <Users className="w-3.5 h-3.5" /> },
-    { id: 'lms', label: 'LMS Курсы', icon: <GraduationCap className="w-3.5 h-3.5" /> },
-    { id: 'security', label: 'Безопасность', icon: <ShieldCheck className="w-3.5 h-3.5" /> },
-    { id: 'observability', label: 'Метрики', icon: <Activity className="w-3.5 h-3.5" /> },
-    { id: 'wiki', label: 'LLM Wiki', icon: <BookOpen className="w-3.5 h-3.5" /> },
-    { id: 'devtools', label: 'DevTools & Голос', icon: <Terminal className="w-3.5 h-3.5 text-cyan-400" /> },
+  const tabs: { id: NavTabId; label: string; icon: React.ReactNode; domain: NavigationDomain }[] = [
+    { id: 'dashboard', label: 'Сводка', icon: <Activity className="w-3.5 h-3.5 text-cyan-400" />, domain: 'core' },
+    { id: 'audit', label: 'Аудит & Модернизация', icon: <Cpu className="w-3.5 h-3.5 text-cyan-400" />, domain: 'core' },
+    { id: 'tenants', label: 'Мультитенантность', icon: <Building className="w-3.5 h-3.5" />, domain: 'core' },
+    { id: 'visualizer', label: 'Визуализатор', icon: <Network className="w-3.5 h-3.5" />, domain: 'core' },
+
+    { id: 'kanban', label: 'Канбан Идей', icon: <Layers className="w-3.5 h-3.5" />, domain: 'engineering' },
+    { id: 'pipelines', label: 'CI/CD Пайплайны', icon: <Terminal className="w-3.5 h-3.5" />, domain: 'engineering' },
+    { id: 'observability', label: 'Метрики', icon: <Activity className="w-3.5 h-3.5" />, domain: 'engineering' },
+    { id: 'devtools', label: 'DevTools & Голос', icon: <Terminal className="w-3.5 h-3.5 text-cyan-400" />, domain: 'engineering' },
+
+    { id: 'pluginstudio', label: 'Backstage Студия', icon: <Sparkles className="w-3.5 h-3.5" />, domain: 'platform' },
+    { id: 'plugins', label: 'Каталог Плагинов', icon: <Boxes className="w-3.5 h-3.5" />, domain: 'platform' },
+    { id: 'security', label: 'Безопасность', icon: <ShieldCheck className="w-3.5 h-3.5" />, domain: 'platform' },
+    { id: 'wiki', label: 'LLM Wiki', icon: <BookOpen className="w-3.5 h-3.5" />, domain: 'platform' },
+
+    { id: 'crm', label: 'Gauzy ERP', icon: <Briefcase className="w-3.5 h-3.5" />, domain: 'business' },
+    { id: 'univer', label: 'Univer Office', icon: <Sparkles className="w-3.5 h-3.5" />, domain: 'business' },
+    { id: 'lms', label: 'LMS Курсы', icon: <GraduationCap className="w-3.5 h-3.5" />, domain: 'business' },
+    { id: 'social', label: 'Сообщество', icon: <Users className="w-3.5 h-3.5" />, domain: 'business' },
   ];
+
+  const visibleTabs = selectedDomain === 'all' ? tabs : tabs.filter((t) => t.domain === selectedDomain);
 
   return (
     <header className="bg-neutral-950 border-b border-neutral-800/80 sticky top-0 z-40">
@@ -328,8 +340,8 @@ export const Header: React.FC<HeaderProps> = ({
               <h1 className="text-sm font-extrabold tracking-wider text-white">
                 МИРОВИЗОР
               </h1>
-              <span className="text-[10px] font-mono px-1.5 py-0.2 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded font-semibold">
-                v1.0 ENTERPRISE
+              <span className="text-[11px] font-mono text-neutral-400 font-medium">
+                · Enterprise Portal
               </span>
             </div>
 
@@ -461,17 +473,31 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* User Profile & Quick Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          {onOpenA11y && (
+            <button
+              type="button"
+              onClick={onOpenA11y}
+              className="p-1.5 bg-neutral-900 hover:bg-neutral-800 text-cyan-400 border border-neutral-800 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-cyan-400"
+              title="Настройки доступности (WCAG 2.1 AA)"
+              aria-label="Настройки доступности интерфейса"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+          )}
+
           <button
             onClick={onOpenVoice}
-            className="p-1.5 bg-neutral-900 hover:bg-neutral-800 text-purple-400 border border-neutral-800 rounded-lg transition-colors"
+            className="p-1.5 bg-neutral-900 hover:bg-neutral-800 text-purple-400 border border-neutral-800 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-purple-400"
             title="Голосовой ассистент Gemini Live (Ctrl+V)"
+            aria-label="Голосовой ассистент"
           >
             <Mic className="w-4 h-4" />
           </button>
           <button
             onClick={onOpenTerminal}
-            className="p-1.5 bg-neutral-900 hover:bg-neutral-800 text-cyan-400 border border-neutral-800 rounded-lg transition-colors"
+            className="p-1.5 bg-neutral-900 hover:bg-neutral-800 text-cyan-400 border border-neutral-800 rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-cyan-400"
             title="Открыть DevTools терминал"
+            aria-label="DevTools терминал"
           >
             <Terminal className="w-4 h-4" />
           </button>
@@ -479,7 +505,8 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-2 pl-2 border-l border-neutral-800 text-xs">
             <img
               src={currentUser.avatarUrl}
-              alt={currentUser.fullName}
+              alt=""
+              aria-hidden="true"
               className="w-7 h-7 rounded-full object-cover border border-neutral-700"
             />
             <div className="hidden lg:block text-left">
@@ -490,25 +517,67 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Navigation Sub-Bar */}
-      <div className="flex items-center gap-1 px-4 overflow-x-auto border-t border-neutral-850 bg-neutral-900/40 text-xs py-1">
-        {tabs.map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => onTabChange(tab.id)}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap ${
-                isActive
-                  ? 'bg-neutral-800 text-white shadow-sm'
-                  : 'text-neutral-400 hover:text-white hover:bg-neutral-850/60'
-              }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          );
-        })}
+      {/* Navigation Sub-Bar with Domain Clusters (WCAG 2.1 AA & Zero-Pill Ergonomics) */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 border-t border-neutral-800/80 bg-neutral-900/60 text-xs py-1.5">
+        {/* Domain Segmented Controller */}
+        <div
+          role="radiogroup"
+          aria-label="Кластеры модулей платформы"
+          className="flex items-center gap-1 bg-neutral-950 p-0.5 rounded-lg border border-neutral-800 shrink-0"
+        >
+          {[
+            { id: 'all', label: 'Все' },
+            { id: 'core', label: 'Ядро' },
+            { id: 'engineering', label: 'Инженерия' },
+            { id: 'platform', label: 'Платформа' },
+            { id: 'business', label: 'Бизнес' },
+          ].map((d) => {
+            const isDomainActive = selectedDomain === d.id;
+            return (
+              <button
+                key={d.id}
+                type="button"
+                role="radio"
+                aria-checked={isDomainActive}
+                onClick={() => setSelectedDomain(d.id as NavigationDomain)}
+                className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all ${
+                  isDomainActive
+                    ? 'bg-neutral-800 text-white shadow-xs font-semibold'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                {d.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tab Buttons in Selected Domain */}
+        <div
+          role="tablist"
+          aria-label="Навигация по разделам платформы"
+          className="flex items-center gap-1 overflow-x-auto flex-1 justify-start min-w-0"
+        >
+          {visibleTabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => onTabChange(tab.id)}
+                className={`px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-cyan-400 ${
+                  isActive
+                    ? 'bg-neutral-800 text-white shadow-sm ring-1 ring-neutral-700'
+                    : 'text-neutral-400 hover:text-white hover:bg-neutral-850/60'
+                }`}
+              >
+                {tab.icon}
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </header>
   );

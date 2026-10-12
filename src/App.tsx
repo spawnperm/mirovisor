@@ -12,6 +12,7 @@ import { UniversalSearchModal } from './components/search/UniversalSearchModal';
 import { PortalTerminalDrawer } from './components/devtools/PortalTerminalDrawer';
 import { VoiceControlModal } from './components/devtools/VoiceControlModal';
 import { MacroRegistryModal } from './components/devtools/MacroRegistryModal';
+import { AccessibilitySettingsModal } from './components/common/AccessibilitySettingsModal';
 import { ToastContainer } from './components/common/ToastContainer';
 import { useProductTelemetry } from './hooks/useProductTelemetry';
 import { useAppStore } from './store/useAppStore';
@@ -146,6 +147,13 @@ export default function App() {
     setMacros,
     executeVoiceCommand,
     executeMacro,
+    highContrast,
+    fontSizePreference,
+    reducedMotion,
+    enhancedFocusRings,
+    isA11yPanelOpen,
+    setA11yPanelOpen,
+    announcementMessage,
     resetUiState,
   } = useAppStore();
 
@@ -186,7 +194,32 @@ export default function App() {
 
   return (
     <ErrorBoundary onReset={resetUiState}>
-      <div className="flex flex-col h-screen w-screen bg-[#090a0f] text-neutral-100 overflow-hidden font-sans">
+      {/* WCAG 2.1 AA Skip Link for Keyboard & Screen Reader Users */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2 focus:bg-cyan-600 focus:text-white focus:rounded-lg focus:font-bold focus:shadow-xl focus:ring-2 focus:ring-white focus:outline-none transition-all"
+      >
+        Перейти к основному содержимому (Skip to content)
+      </a>
+
+      {/* Screen Reader Live Region for Async Announcements */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {announcementMessage}
+      </div>
+
+      <div
+        className={`flex flex-col h-screen w-screen bg-[#090a0f] text-neutral-100 overflow-hidden font-sans ${
+          highContrast ? 'high-contrast-mode' : ''
+        } ${
+          fontSizePreference === 'large'
+            ? 'text-[115%]'
+            : fontSizePreference === 'xlarge'
+            ? 'text-[130%]'
+            : ''
+        } ${reducedMotion ? 'motion-reduce' : ''} ${
+          enhancedFocusRings ? 'enhanced-focus' : ''
+        }`}
+      >
         {/* Top Application Header */}
         <Header
           activeTab={activeTab}
@@ -198,10 +231,11 @@ export default function App() {
           onOpenSearch={() => setSearchOpen(true)}
           onOpenTerminal={() => setTerminalOpen(true)}
           onOpenVoice={() => setVoiceOpen(true)}
+          onOpenA11y={() => setA11yPanelOpen(true)}
         />
 
         {/* Main View Area with React.lazy() & Suspense for all 15 screens */}
-        <main className="flex-1 overflow-hidden relative">
+        <main id="main-content" tabIndex={-1} className="flex-1 overflow-hidden relative focus:outline-none">
           {activeTab === 'dashboard' && (
             <Suspense fallback={<ViewLoadingSkeleton label="Сводный Дашборд 15 Модулей" />}>
               <DashboardOverview />
@@ -450,6 +484,12 @@ export default function App() {
             setMacros((prev) => prev.filter((m) => m.id !== id));
           }}
           onExecuteMacro={executeMacro}
+        />
+
+        {/* Accessibility Preferences Modal (WCAG 2.1 AA) */}
+        <AccessibilitySettingsModal
+          isOpen={isA11yPanelOpen}
+          onClose={() => setA11yPanelOpen(false)}
         />
 
         {/* Global Persistent Real-Time Toast Notifications */}

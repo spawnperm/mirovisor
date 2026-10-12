@@ -11,6 +11,61 @@
     background-color: #090a0f;
     color: #e2e8f0;
   }
+
+  /* Accessible focus indicators across all interactive elements */
+  *:focus-visible {
+    outline: 2px solid #06b6d4;
+    outline-offset: 2px;
+  }
+}
+
+/* Enhanced Focus Rings Mode */
+.enhanced-focus *:focus-visible {
+  outline: 3px solid #38bdf8 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.3) !important;
+}
+
+/* High Contrast Mode (WCAG 2.1 AAA Contrast Ratio > 7:1) */
+.high-contrast-mode {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+.high-contrast-mode .bg-neutral-950,
+.high-contrast-mode .bg-neutral-900,
+.high-contrast-mode .bg-\[\#090a0f\] {
+  background-color: #000000 !important;
+}
+
+.high-contrast-mode .border-neutral-800,
+.high-contrast-mode .border-neutral-850,
+.high-contrast-mode .border-neutral-700 {
+  border-color: #52525b !important;
+}
+
+.high-contrast-mode .text-neutral-400,
+.high-contrast-mode .text-neutral-500 {
+  color: #e4e4e7 !important;
+}
+
+/* Reduced Motion Mode for Vestibular Sensitivity */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.motion-reduce *,
+.motion-reduce *::before,
+.motion-reduce *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
 }
 
 /* Custom scrollbars */
