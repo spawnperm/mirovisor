@@ -79,7 +79,7 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="bg-neutral-950 border-b border-neutral-800/80 sticky top-0 z-40">
       {/* Top Main Bar */}
       <div className="flex items-center justify-between px-4 py-2.5 gap-4">
-        {/* Brand / Title */}
+        {/* Brand / Title & Tenant Switcher */}
         <div className="flex items-center gap-3 shrink-0">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-indigo-600 flex items-center justify-center font-bold text-white shadow-md shadow-cyan-900/30 font-mono text-sm">
             М
@@ -91,57 +91,69 @@ export const Header: React.FC<HeaderProps> = ({
                 v1.0 ENTERPRISE
               </span>
             </h1>
-            <div className="text-[10px] text-neutral-400 font-mono">
-              Schema-per-Tenant · Cordis Evolution · ASVS 5.0
+
+            {/* Tenant Switcher in place of subtitle */}
+            <div className="relative mt-0.5">
+              <button
+                onClick={() => setShowTenantDropdown(!showTenantDropdown)}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-neutral-900 hover:bg-neutral-850 border border-neutral-800 hover:border-cyan-500/40 text-[11px] font-mono text-cyan-400 transition-colors group text-left shadow-sm"
+                title="Сменить рабочий тенант"
+              >
+                <Building className="w-3 h-3 text-cyan-400 group-hover:text-cyan-300 shrink-0" />
+                <span className="font-semibold text-neutral-200 group-hover:text-white leading-tight">
+                  {activeTenant.name}
+                </span>
+                <span className="text-[10px] text-neutral-500 font-mono">
+                  ({activeTenant.schema})
+                </span>
+                <ChevronDown className={`w-3 h-3 text-neutral-400 transition-transform ${showTenantDropdown ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showTenantDropdown && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40 bg-black/20"
+                    onClick={() => setShowTenantDropdown(false)}
+                  />
+                  <div className="absolute left-0 mt-1.5 w-72 bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl p-1.5 z-50 text-xs">
+                    <div className="text-[10px] font-mono uppercase text-neutral-400 px-2 py-1 flex items-center justify-between border-b border-neutral-800/80 mb-1">
+                      <span>Выберите тенант:</span>
+                      <span className="text-cyan-400 font-semibold">Schema-per-Tenant</span>
+                    </div>
+                    {tenants.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => {
+                          onSelectTenant(t);
+                          setShowTenantDropdown(false);
+                        }}
+                        className={`w-full text-left p-2 rounded-lg flex items-center justify-between transition-colors ${
+                          t.id === activeTenant.id
+                            ? 'bg-neutral-800 text-white font-semibold'
+                            : 'text-neutral-300 hover:bg-neutral-850'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span>{t.name}</span>
+                            {t.id === activeTenant.id && (
+                              <span className="text-[9px] px-1 py-0.2 bg-cyan-500/20 text-cyan-300 rounded font-mono">АКТИВЕН</span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-neutral-500 font-mono">
+                            {t.schema} · {t.visibility}
+                          </div>
+                        </div>
+                        {t.id === activeTenant.id && (
+                          <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
-        </div>
-
-        {/* Tenant Switcher Dropdown */}
-        <div className="relative shrink-0">
-          <button
-            onClick={() => setShowTenantDropdown(!showTenantDropdown)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-neutral-900 border border-neutral-800 rounded-lg hover:border-neutral-700 transition-colors text-xs text-neutral-200"
-          >
-            <Building className="w-3.5 h-3.5 text-cyan-400" />
-            <div className="text-left">
-              <span className="font-semibold block leading-tight">{activeTenant.name}</span>
-              <span className="text-[10px] text-neutral-500 font-mono">{activeTenant.schema}</span>
-            </div>
-            <ChevronDown className="w-3 h-3 text-neutral-400 ml-1" />
-          </button>
-
-          {showTenantDropdown && (
-            <div className="absolute left-0 mt-1.5 w-64 bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl p-1.5 z-50 text-xs">
-              <span className="text-[10px] font-mono uppercase text-neutral-500 px-2 py-1 block">
-                Выберите рабочий тенант:
-              </span>
-              {tenants.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => {
-                    onSelectTenant(t);
-                    setShowTenantDropdown(false);
-                  }}
-                  className={`w-full text-left p-2 rounded-lg flex items-center justify-between transition-colors ${
-                    t.id === activeTenant.id
-                      ? 'bg-neutral-800 text-white font-semibold'
-                      : 'text-neutral-300 hover:bg-neutral-850'
-                  }`}
-                >
-                  <div>
-                    <div>{t.name}</div>
-                    <div className="text-[10px] text-neutral-500 font-mono">
-                      {t.schema} · {t.visibility}
-                    </div>
-                  </div>
-                  {t.id === activeTenant.id && (
-                    <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Search trigger */}
