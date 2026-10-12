@@ -105,6 +105,16 @@ export interface AppState {
   executeVoiceCommand: (commandText: string, customMemory?: ConversationTurn[]) => VoiceActionResult;
   executeMacro: (macro: VoiceMacro) => void;
 
+  // Global Toast Notifications
+  toasts: import('../types').ToastNotification[];
+  addToast: (toast: Omit<import('../types').ToastNotification, 'id' | 'timestamp'> & { id?: string }) => void;
+  dismissToast: (id: string) => void;
+  clearToasts: () => void;
+
+  // Product Interaction Telemetry
+  telemetryEvents: import('../types').ProductTelemetryEvent[];
+  recordTelemetryEvent: (event: Omit<import('../types').ProductTelemetryEvent, 'id' | 'timestamp' | 'tenantId' | 'userId'>) => void;
+
   // Reset UI State
   resetUiState: () => void;
 }
@@ -379,6 +389,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
 
     set({ builds: [newBuild, ...builds] });
+    get().addToast({
+      type: 'success',
+      title: `CI/CD Сборка #${nextNumber} завершена`,
+      message: `Ветка ${branch} прошла все Security Gates и тесты.`,
+    });
 
     try {
       const newCard = await AiAgentService.getInstance().analyzeTelemetry(
@@ -406,6 +421,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         return p;
       }),
     }));
+    get().addToast({
+      type: 'success',
+      title: 'Плагин активирован',
+      message: `Плагин ${pluginId} установлен в схему ${activeTenant.schema}.`,
+    });
   },
   uninstallPlugin: (pluginId) => {
     const { activeTenant } = get();
@@ -674,6 +694,45 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
 
     get().setVoiceMemory((prev) => [...prev, userTurn, agentTurn]);
+    get().addToast({
+      type: 'info',
+      title: `Макрос «${macro.name}»`,
+      message: result?.details || 'Цепочка действий макроса исполнена.',
+    });
+  },
+
+  // Global Toast Notifications
+  toasts: [],
+  addToast: (toast) => {
+    const newToast: import('../types').ToastNotification = {
+      id: toast.id || `toast_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      durationMs: toast.durationMs ?? 5000,
+      ...toast,
+    };
+    set((state) => ({ toasts: [newToast, ...state.toasts.slice(0, 5)] }));
+  },
+  dismissToast: (id) => {
+    set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }));
+  },
+  clearToasts: () => {
+    set({ toasts: [] });
+  },
+
+  // Product Interaction Telemetry
+  telemetryEvents: [],
+  recordTelemetryEvent: (event) => {
+    const { activeTenant, currentUser } = get();
+    const newEvent: import('../types').ProductTelemetryEvent = {
+      id: `tel_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      tenantId: activeTenant.id,
+      userId: currentUser.id,
+      ...event,
+    };
+    set((state) => ({
+      telemetryEvents: [newEvent, ...state.telemetryEvents.slice(0, 99)],
+    }));
   },
 
   resetUiState: () => {
@@ -685,6 +744,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       isVoiceOpen: false,
       isMacroRegistryOpen: false,
       metrics: INITIAL_METRICS,
+      toasts: [],
     });
   },
 }));

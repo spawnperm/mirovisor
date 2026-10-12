@@ -309,3 +309,39 @@ export interface HistoricalTrendPoint {
   growthRatePct?: number;
 }
 
+export type ToastType = 'info' | 'success' | 'warning' | 'error' | 'security';
+
+export interface ToastNotification {
+  id: string;
+  type: ToastType;
+  title: string;
+  message: string;
+  timestamp: string;
+  durationMs?: number;
+  actionLabel?: string;
+  actionCallback?: () => void;
+}
+
+export type EisenhowerQuadrantId = 
+  | 'q1_urgent_important' 
+  | 'q2_not_urgent_important' 
+  | 'q3_urgent_not_important' 
+  | 'q4_not_urgent_not_important';
+
+export type TelemetryEventType = 
+  | 'navigation_tab' 
+  | 'modal_toggle' 
+  | 'voice_command' 
+  | 'kanban_interaction' 
+  | 'build_trigger';
+
+export interface ProductTelemetryEvent {
+  id: string;
+  timestamp: string;
+  type: TelemetryEventType;
+  target: string;
+  metadata?: Record<string, any>;
+  tenantId: string;
+  userId: string;
+}
+

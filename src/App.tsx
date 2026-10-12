@@ -12,12 +12,18 @@ import { UniversalSearchModal } from './components/search/UniversalSearchModal';
 import { PortalTerminalDrawer } from './components/devtools/PortalTerminalDrawer';
 import { VoiceControlModal } from './components/devtools/VoiceControlModal';
 import { MacroRegistryModal } from './components/devtools/MacroRegistryModal';
+import { ToastContainer } from './components/common/ToastContainer';
+import { useProductTelemetry } from './hooks/useProductTelemetry';
 import { useAppStore } from './store/useAppStore';
 import { useTenantsQuery, useTenantMetricsQuery, useKanbanCardsQuery } from './queries/useTenantQueries';
 
 // =============================================================================
-// React.lazy() dynamic code-splitting for all 15 modular enterprise screens
+// React.lazy() dynamic code-splitting for all 15 modular enterprise screens + Dashboard
 // =============================================================================
+const DashboardOverview = lazy(() =>
+  import('./components/dashboard/DashboardOverview').then((m) => ({ default: m.DashboardOverview }))
+);
+
 const EngineeringAuditView = lazy(() =>
   import('./components/audit/EngineeringAuditView').then((m) => ({ default: m.EngineeringAuditView }))
 );
@@ -148,6 +154,9 @@ export default function App() {
   useTenantMetricsQuery(activeTenant.id);
   useKanbanCardsQuery();
 
+  // Automatic product interaction telemetry tracking
+  useProductTelemetry();
+
   // Global hotkeys (Cmd+K / Ctrl+K for search, Ctrl+V for voice)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -193,6 +202,12 @@ export default function App() {
 
         {/* Main View Area with React.lazy() & Suspense for all 15 screens */}
         <main className="flex-1 overflow-hidden relative">
+          {activeTab === 'dashboard' && (
+            <Suspense fallback={<ViewLoadingSkeleton label="Сводный Дашборд 15 Модулей" />}>
+              <DashboardOverview />
+            </Suspense>
+          )}
+
           {activeTab === 'audit' && (
             <Suspense fallback={<ViewLoadingSkeleton label="Аудит & Модернизация" />}>
               <EngineeringAuditView />
@@ -436,6 +451,9 @@ export default function App() {
           }}
           onExecuteMacro={executeMacro}
         />
+
+        {/* Global Persistent Real-Time Toast Notifications */}
+        <ToastContainer />
       </div>
     </ErrorBoundary>
   );

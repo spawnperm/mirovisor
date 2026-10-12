@@ -26,7 +26,11 @@ import {
   Users2,
   FolderOpen,
   FolderClosed,
-  X
+  X,
+  Grid2x2,
+  CalendarClock,
+  Bot,
+  ShieldAlert
 } from 'lucide-react';
 import { KanbanCard, CardColumn, CardType, CardPriority } from '../../types';
 import { AiAgentService } from '../../services/aiAgentService';
@@ -45,6 +49,7 @@ interface KanbanBoardProps {
 const WIP_LIMIT_IN_PROGRESS = 3;
 
 export type SwimlaneMode = 'none' | 'priority' | 'team';
+export type BoardViewMode = 'kanban' | 'eisenhower';
 
 interface SwimlaneDef {
   id: string;
@@ -62,6 +67,25 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   onRollbackCard,
   onRateCard,
 }) => {
+  const [boardViewMode, setBoardViewMode] = useState<BoardViewMode>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('mirovisor_kanban_view_layout');
+        if (saved === 'eisenhower' || saved === 'kanban') return saved;
+      } catch {}
+    }
+    return 'kanban';
+  });
+
+  const handleSetBoardViewMode = (mode: BoardViewMode) => {
+    setBoardViewMode(mode);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('mirovisor_kanban_view_layout', mode);
+      } catch {}
+    }
+  };
+
   const [swimlaneMode, setSwimlaneMode] = useState<SwimlaneMode>('none');
   const [collapsedSwimlanes, setCollapsedSwimlanes] = useState<Set<string>>(new Set());
 
@@ -165,6 +189,27 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     }
 
     onMoveCard(cardId, targetCol);
+  };
+
+  const handleDropEisenhower = (e: React.DragEvent, quadrant: string) => {
+    e.preventDefault();
+    const cardId = e.dataTransfer.getData('text/plain');
+    const card = cards.find((c) => c.id === cardId);
+    if (!card) return;
+
+    if (quadrant === 'q1') {
+      onUpdateCard({ ...card, priority: 'critical' });
+    } else if (quadrant === 'q2') {
+      onUpdateCard({
+        ...card,
+        priority: 'high',
+        column: card.column === 'in_progress' ? 'ideas' : card.column,
+      });
+    } else if (quadrant === 'q3') {
+      onUpdateCard({ ...card, priority: 'medium' });
+    } else if (quadrant === 'q4') {
+      onUpdateCard({ ...card, priority: 'low' });
+    }
   };
 
   const confirmRejection = () => {
@@ -473,68 +518,100 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         </div>
       </div>
 
-      {/* Swimlane Mode Selector & Filters Bar */}
+      {/* Primary View Layout & Mode Switcher Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-neutral-900/50 p-2.5 rounded-xl border border-neutral-800 shrink-0 text-xs">
-        {/* Horizontal Swimlanes Mode Switcher */}
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-neutral-400 text-[11px] uppercase tracking-wider flex items-center gap-1">
-            <Rows3 className="w-3.5 h-3.5 text-cyan-400" />
-            Свимлейны:
-          </span>
+        {/* Left: View Mode (Kanban vs Eisenhower) and Swimlanes */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Layout Mode Toggle */}
           <div className="flex items-center gap-1 bg-neutral-950 p-1 rounded-lg border border-neutral-800">
             <button
-              onClick={() => setSwimlaneMode('none')}
+              onClick={() => handleSetBoardViewMode('kanban')}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors ${
-                swimlaneMode === 'none'
+                boardViewMode === 'kanban'
                   ? 'bg-neutral-800 text-white font-bold shadow-xs'
                   : 'text-neutral-400 hover:text-white'
               }`}
             >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              Стандартная доска
+              <LayoutGrid className="w-3.5 h-3.5 text-cyan-400" />
+              Колонки Канбан
             </button>
 
             <button
-              onClick={() => setSwimlaneMode('priority')}
+              onClick={() => handleSetBoardViewMode('eisenhower')}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors ${
-                swimlaneMode === 'priority'
-                  ? 'bg-cyan-600 text-white font-bold shadow-xs'
+                boardViewMode === 'eisenhower'
+                  ? 'bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-bold shadow-xs'
                   : 'text-neutral-400 hover:text-white'
               }`}
             >
-              <Shield className="w-3.5 h-3.5 text-amber-300" />
-              По приоритетам (P0–P3)
-            </button>
-
-            <button
-              onClick={() => setSwimlaneMode('team')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors ${
-                swimlaneMode === 'team'
-                  ? 'bg-purple-600 text-white font-bold shadow-xs'
-                  : 'text-neutral-400 hover:text-white'
-              }`}
-            >
-              <Users2 className="w-3.5 h-3.5 text-purple-200" />
-              По командам / Агентам
+              <Grid2x2 className="w-3.5 h-3.5 text-amber-300" />
+              Матрица Эйзенхауэра 2×2
             </button>
           </div>
 
-          {swimlaneMode !== 'none' && (
-            <div className="flex items-center gap-1 ml-2 text-[11px] font-mono text-neutral-400">
-              <button
-                onClick={expandAllSwimlanes}
-                className="px-2 py-1 rounded bg-neutral-950 hover:bg-neutral-800 text-neutral-300 border border-neutral-800"
-                title="Развернуть все свимлейны"
-              >
-                Развернуть все
-              </button>
-              <button
-                onClick={collapseAllSwimlanes}
-                className="px-2 py-1 rounded bg-neutral-950 hover:bg-neutral-800 text-neutral-300 border border-neutral-800"
-                title="Свернуть все свимлейны"
-              >
-                Свернуть все
-              </button>
+          {/* Swimlanes Mode (Only shown when boardViewMode === 'kanban') */}
+          {boardViewMode === 'kanban' && (
+            <div className="flex items-center gap-2 pl-2 border-l border-neutral-800">
+              <span className="font-semibold text-neutral-400 text-[11px] uppercase tracking-wider flex items-center gap-1">
+                <Rows3 className="w-3.5 h-3.5 text-cyan-400" />
+                Свимлейны:
+              </span>
+              <div className="flex items-center gap-1 bg-neutral-950 p-1 rounded-lg border border-neutral-800">
+                <button
+                  onClick={() => setSwimlaneMode('none')}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors ${
+                    swimlaneMode === 'none'
+                      ? 'bg-neutral-800 text-white font-bold shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  Без свимлейнов
+                </button>
+
+                <button
+                  onClick={() => setSwimlaneMode('priority')}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors ${
+                    swimlaneMode === 'priority'
+                      ? 'bg-cyan-600 text-white font-bold shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  <Shield className="w-3.5 h-3.5 text-amber-300" />
+                  По приоритетам
+                </button>
+
+                <button
+                  onClick={() => setSwimlaneMode('team')}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors ${
+                    swimlaneMode === 'team'
+                      ? 'bg-purple-600 text-white font-bold shadow-xs'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  <Users2 className="w-3.5 h-3.5 text-purple-200" />
+                  По командам
+                </button>
+              </div>
+
+              {swimlaneMode !== 'none' && (
+                <div className="flex items-center gap-1 ml-1 text-[11px] font-mono text-neutral-400">
+                  <button
+                    onClick={expandAllSwimlanes}
+                    className="px-2 py-1 rounded bg-neutral-950 hover:bg-neutral-800 text-neutral-300 border border-neutral-800"
+                    title="Развернуть все свимлейны"
+                  >
+                    Развернуть
+                  </button>
+                  <button
+                    onClick={collapseAllSwimlanes}
+                    className="px-2 py-1 rounded bg-neutral-950 hover:bg-neutral-800 text-neutral-300 border border-neutral-800"
+                    title="Свернуть все свимлейны"
+                  >
+                    Свернуть
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -575,7 +652,96 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
       {/* Main Board Area */}
       <div className="flex-1 overflow-y-auto pr-1">
-        {swimlaneMode === 'none' ? (
+        {boardViewMode === 'eisenhower' ? (
+          /* PERSISTENT EISENHOWER MATRIX (2x2 Grid) */
+          <div className="h-full flex flex-col gap-3 min-h-[580px]">
+            {/* Matrix Subtitle */}
+            <div className="flex items-center justify-between text-xs text-neutral-400 px-1 font-mono">
+              <span className="flex items-center gap-2 text-neutral-300 font-semibold">
+                <Grid2x2 className="w-4 h-4 text-amber-400" />
+                МАТРИЦА ЭЙЗЕНХАУЭРА (ВАЖНОСТЬ × СРОЧНОСТЬ)
+              </span>
+              <span>Перетаскивайте карточки между квадрантами для авто-калибровки приоритета</span>
+            </div>
+
+            {/* 2x2 Quadrants Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 flex-1 pb-4">
+              {[
+                {
+                  id: 'q1',
+                  title: 'Срочно и Важно (Do First)',
+                  badge: 'Q1 · P0 Критический',
+                  description: 'Блокирующие баги, критические уязвимости, отказы прод-систем',
+                  color: 'border-rose-500/50 bg-rose-950/20 text-rose-400',
+                  icon: <ShieldAlert className="w-4 h-4 text-rose-400" />,
+                  cards: filteredCards.filter((c) => c.priority === 'critical' || (c.priority === 'high' && c.column === 'in_progress')),
+                },
+                {
+                  id: 'q2',
+                  title: 'Не срочно, но Важно (Schedule)',
+                  badge: 'Q2 · P1 Высокий',
+                  description: 'Архитектурные ADR, изоляция мультитенантности RLS, надежность тестов',
+                  color: 'border-amber-500/50 bg-amber-950/20 text-amber-400',
+                  icon: <CalendarClock className="w-4 h-4 text-amber-400" />,
+                  cards: filteredCards.filter((c) => c.priority === 'high' && c.column !== 'in_progress'),
+                },
+                {
+                  id: 'q3',
+                  title: 'Срочно, но Не важно (Delegate)',
+                  badge: 'Q3 · P2 Средний',
+                  description: 'Рутинная телеметрия, авто-исправления Cordis, повторные прогоны',
+                  color: 'border-cyan-500/50 bg-cyan-950/20 text-cyan-400',
+                  icon: <Bot className="w-4 h-4 text-cyan-400" />,
+                  cards: filteredCards.filter((c) => c.priority === 'medium'),
+                },
+                {
+                  id: 'q4',
+                  title: 'Не срочно и Не важно (Eliminate / Backlog)',
+                  badge: 'Q4 · P3 Бэклог',
+                  description: 'Косметические доработки, отложенные идеи, архив предложений',
+                  color: 'border-neutral-700 bg-neutral-900/40 text-neutral-400',
+                  icon: <Clock className="w-4 h-4 text-neutral-400" />,
+                  cards: filteredCards.filter((c) => c.priority === 'low' || c.column === 'deferred'),
+                },
+              ].map((quad) => (
+                <div
+                  key={quad.id}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDropEisenhower(e, quad.id)}
+                  className={`rounded-2xl border ${quad.color} p-3.5 flex flex-col shadow-lg backdrop-blur-xs min-h-[250px]`}
+                >
+                  <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-neutral-800/80">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {quad.icon}
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-white flex items-center gap-2 truncate">
+                          {quad.title}
+                          <span className="text-[10px] font-mono text-neutral-300 px-1.5 py-0.2 bg-neutral-900 rounded border border-neutral-750">
+                            {quad.cards.length}
+                          </span>
+                        </h4>
+                        <span className="text-[10px] text-neutral-400 block truncate">{quad.description}</span>
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${quad.color} shrink-0`}>
+                      {quad.badge}
+                    </span>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+                    {quad.cards.length === 0 ? (
+                      <div className="h-28 flex items-center justify-center border border-dashed border-neutral-800/80 rounded-xl text-neutral-500 text-xs text-center p-3">
+                        Перетащите карточки сюда для изменения приоритета
+                      </div>
+                    ) : (
+                      quad.cards.map(renderCardItem)
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : swimlaneMode === 'none' ? (
           /* STANDARD FLAT KANBAN BOARD */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 h-full min-h-[520px]">
             {columns.map((col) => {

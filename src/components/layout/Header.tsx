@@ -31,6 +31,7 @@ interface TenantTreeNode {
 }
 
 export type NavTabId = 
+  | 'dashboard'
   | 'audit'
   | 'visualizer' 
   | 'pipelines'
@@ -295,6 +296,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const tabs: { id: NavTabId; label: string; icon: React.ReactNode }[] = [
+    { id: 'dashboard', label: 'Сводный Обзор', icon: <Activity className="w-3.5 h-3.5 text-cyan-400" /> },
     { id: 'audit', label: 'Аудит & Модернизация', icon: <Cpu className="w-3.5 h-3.5 text-cyan-400" /> },
     { id: 'visualizer', label: 'Визуализатор', icon: <Network className="w-3.5 h-3.5" /> },
     { id: 'pipelines', label: 'CI/CD Пайплайны', icon: <Terminal className="w-3.5 h-3.5" /> },
