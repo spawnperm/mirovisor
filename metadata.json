@@ -1,0 +1,6 @@
+{
+  "name": "МИРОВИЗОР · Mirovisor Portal",
+  "description": "Интерактивная многомерная визуализация данных, кросс-платформенный поиск, эволюционная канбан-доска идей и мультитенантная платформа ERP/CRM/LMS.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
