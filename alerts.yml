@@ -1,0 +1,29 @@
+groups:
+  - name: mirovisor_alerts
+    rules:
+      - alert: PortalGatewayDown
+        expr: up{job="mirovisor-portal"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Mirovisor API Gateway is down"
+          description: "Instance {{ $labels.instance }} has been unreachable for more than 1 minute."
+
+      - alert: HighMemoryUtilization
+        expr: mirovisor_memory_heap_used_bytes > 500000000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High heap memory usage in portal"
+          description: "Portal heap memory exceeds 500MB (Current: {{ $value }} bytes)."
+
+      - alert: NatsJetStreamDown
+        expr: up{job="nats-jetstream"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "NATS JetStream broker unreachable"
+          description: "Event telemetry bus is unreachable at {{ $labels.instance }}."
