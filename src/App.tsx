@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { lazy, Suspense, useEffect } from 'react';
+import React, { lazy, Suspense, useEffect, useCallback } from 'react';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
@@ -15,7 +15,21 @@ import { MacroRegistryModal } from './components/devtools/MacroRegistryModal';
 import { AccessibilitySettingsModal } from './components/common/AccessibilitySettingsModal';
 import { ToastContainer } from './components/common/ToastContainer';
 import { useProductTelemetry } from './hooks/useProductTelemetry';
-import { useAppStore } from './store/useAppStore';
+import {
+  useNavigationSlice,
+  useA11ySlice,
+  useTenantsSlice,
+  useKanbanSlice,
+  usePipelinesSlice,
+  usePluginsSlice,
+  useCrmSlice,
+  useLmsSlice,
+  useSocialSlice,
+  useSecuritySlice,
+  useDevToolsSlice,
+  useMetricsSlice,
+  useInProgressCardsCount,
+} from './store/selectors';
 import { useTenantsQuery, useTenantMetricsQuery, useKanbanCardsQuery } from './queries/useTenantQueries';
 
 // =============================================================================
@@ -98,7 +112,8 @@ const DevToolsSessionView = lazy(() =>
 );
 
 export default function App() {
-  // Zustand Store selectors
+  // Memoized Zustand Store slices using shallow comparison
+  // Prevents re-renders of the main layout when unrelated store data (e.g. toasts, telemetry, metrics) changes
   const {
     activeTab,
     setActiveTab,
@@ -110,52 +125,77 @@ export default function App() {
     setVoiceOpen,
     isMacroRegistryOpen,
     setMacroRegistryOpen,
+    isA11yPanelOpen,
+    setA11yPanelOpen,
+    resetUiState,
+  } = useNavigationSlice();
+
+  const {
+    highContrast,
+    fontSizePreference,
+    reducedMotion,
+    enhancedFocusRings,
+    announcementMessage,
+  } = useA11ySlice();
+
+  const {
     tenants,
     activeTenant,
+    currentUser,
     setActiveTenant,
     updateTenantConfig,
     createTenant,
-    currentUser,
+  } = useTenantsSlice();
+
+  const {
     cards,
     moveCard,
     updateCard,
     addCard,
     rateCard,
     rollbackCard,
-    builds,
-    triggerBuild,
+  } = useKanbanSlice();
+
+  const { builds, triggerBuild } = usePipelinesSlice();
+
+  const {
     plugins,
     installPlugin,
     uninstallPlugin,
     addPluginManifest,
+  } = usePluginsSlice();
+
+  const {
     crmContacts,
     crmDeals,
     addCrmContact,
     addCrmDeal,
-    courses,
-    completeCourse,
-    posts,
-    addPost,
+  } = useCrmSlice();
+
+  const { courses, completeCourse } = useLmsSlice();
+
+  const { posts, addPost } = useSocialSlice();
+
+  const {
     securityFindings,
     pushFindingToKanban,
     remediateFinding,
     addSecurityFinding,
-    metrics,
+  } = useSecuritySlice();
+
+  const {
     voiceMemory,
     setVoiceMemory,
     macros,
     setMacros,
     executeVoiceCommand,
     executeMacro,
-    highContrast,
-    fontSizePreference,
-    reducedMotion,
-    enhancedFocusRings,
-    isA11yPanelOpen,
-    setA11yPanelOpen,
-    announcementMessage,
-    resetUiState,
-  } = useAppStore();
+  } = useDevToolsSlice();
+
+  const metrics = useMetricsSlice();
+
+  // Primitive memoized selector for in-progress cards count
+  const inProgressCardsCount = useInProgressCardsCount();
 
   // TanStack Query cache integration
   useTenantsQuery();
@@ -164,6 +204,18 @@ export default function App() {
 
   // Automatic product interaction telemetry tracking
   useProductTelemetry();
+
+  // Memoized modal toggle handlers
+  const handleOpenSearch = useCallback(() => setSearchOpen(true), [setSearchOpen]);
+  const handleCloseSearch = useCallback(() => setSearchOpen(false), [setSearchOpen]);
+  const handleOpenTerminal = useCallback(() => setTerminalOpen(true), [setTerminalOpen]);
+  const handleCloseTerminal = useCallback(() => setTerminalOpen(false), [setTerminalOpen]);
+  const handleOpenVoice = useCallback(() => setVoiceOpen(true), [setVoiceOpen]);
+  const handleCloseVoice = useCallback(() => setVoiceOpen(false), [setVoiceOpen]);
+  const handleOpenA11y = useCallback(() => setA11yPanelOpen(true), [setA11yPanelOpen]);
+  const handleCloseA11y = useCallback(() => setA11yPanelOpen(false), [setA11yPanelOpen]);
+  const handleOpenMacroRegistry = useCallback(() => setMacroRegistryOpen(true), [setMacroRegistryOpen]);
+  const handleCloseMacroRegistry = useCallback(() => setMacroRegistryOpen(false), [setMacroRegistryOpen]);
 
   // Global hotkeys (Cmd+K / Ctrl+K for search, Ctrl+V for voice)
   useEffect(() => {
@@ -189,8 +241,6 @@ export default function App() {
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [isTerminalOpen, isSearchOpen, isVoiceOpen, setSearchOpen, setVoiceOpen]);
-
-  const inProgressCardsCount = cards.filter((c) => c.column === 'in_progress').length;
 
   return (
     <ErrorBoundary onReset={resetUiState}>
@@ -228,10 +278,10 @@ export default function App() {
           activeTenant={activeTenant}
           onSelectTenant={setActiveTenant}
           currentUser={currentUser}
-          onOpenSearch={() => setSearchOpen(true)}
-          onOpenTerminal={() => setTerminalOpen(true)}
-          onOpenVoice={() => setVoiceOpen(true)}
-          onOpenA11y={() => setA11yPanelOpen(true)}
+          onOpenSearch={handleOpenSearch}
+          onOpenTerminal={handleOpenTerminal}
+          onOpenVoice={handleOpenVoice}
+          onOpenA11y={handleOpenA11y}
         />
 
         {/* Main View Area with React.lazy() & Suspense for all 15 screens */}
@@ -257,8 +307,8 @@ export default function App() {
                 securityFindings={securityFindings}
                 voiceMemory={voiceMemory}
                 macros={macros}
-                onOpenVoice={() => setVoiceOpen(true)}
-                onOpenMacroRegistry={() => setMacroRegistryOpen(true)}
+                onOpenVoice={handleOpenVoice}
+                onOpenMacroRegistry={handleOpenMacroRegistry}
                 onExecuteVoiceCommand={executeVoiceCommand}
                 onExecuteMacro={executeMacro}
                 onSelectTenant={setActiveTenant}
@@ -421,8 +471,8 @@ export default function App() {
         {/* Developer Status Footer */}
         <Footer
           activeTenant={activeTenant}
-          onOpenTerminal={() => setTerminalOpen(true)}
-          onOpenVoice={() => setVoiceOpen(true)}
+          onOpenTerminal={handleOpenTerminal}
+          onOpenVoice={handleOpenVoice}
           cardsInProgressCount={inProgressCardsCount}
           onResetUi={resetUiState}
         />
@@ -430,7 +480,7 @@ export default function App() {
         {/* Universal Cmd+K Search Modal (WCAG 2.1 AA) */}
         <UniversalSearchModal
           isOpen={isSearchOpen}
-          onClose={() => setSearchOpen(false)}
+          onClose={handleCloseSearch}
           tenants={tenants}
           cards={cards}
           plugins={plugins}
@@ -453,7 +503,7 @@ export default function App() {
         {/* In-Portal Developer Terminal Drawer (WCAG 2.1 AA) */}
         <PortalTerminalDrawer
           isOpen={isTerminalOpen}
-          onClose={() => setTerminalOpen(false)}
+          onClose={handleCloseTerminal}
           activeTenant={activeTenant}
           currentUser={currentUser}
           onTriggerCiCd={() => triggerBuild('main')}
@@ -462,20 +512,20 @@ export default function App() {
         {/* Voice Control Modal (WCAG 2.1 AA) */}
         <VoiceControlModal
           isOpen={isVoiceOpen}
-          onClose={() => setVoiceOpen(false)}
+          onClose={handleCloseVoice}
           activeTenant={activeTenant}
           onExecuteVoiceCommand={executeVoiceCommand}
           conversationMemory={voiceMemory}
           onUpdateConversationMemory={setVoiceMemory}
           onClearMemory={() => setVoiceMemory([])}
           macros={macros}
-          onOpenMacroRegistry={() => setMacroRegistryOpen(true)}
+          onOpenMacroRegistry={handleOpenMacroRegistry}
         />
 
         {/* Voice Macro Registry Modal (WCAG 2.1 AA) */}
         <MacroRegistryModal
           isOpen={isMacroRegistryOpen}
-          onClose={() => setMacroRegistryOpen(false)}
+          onClose={handleCloseMacroRegistry}
           macros={macros}
           onSaveMacro={(newMacro) => {
             setMacros((prev) => [newMacro, ...prev]);
@@ -489,7 +539,7 @@ export default function App() {
         {/* Accessibility Preferences Modal (WCAG 2.1 AA) */}
         <AccessibilitySettingsModal
           isOpen={isA11yPanelOpen}
-          onClose={() => setA11yPanelOpen(false)}
+          onClose={handleCloseA11y}
         />
 
         {/* Global Persistent Real-Time Toast Notifications */}

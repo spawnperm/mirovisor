@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAppStore } from './useAppStore';
+import { selectNavigationState, selectKanbanState, selectA11yPreferences } from './selectors';
 import { KanbanCard } from '../types';
 
 describe('useAppStore (Zustand Global State)', () => {
@@ -104,5 +105,40 @@ describe('useAppStore (Zustand Global State)', () => {
     // Screen reader announcement
     store.announceToScreenReader('Тестовое оповещение для скринридера');
     expect(useAppStore.getState().announcementMessage).toBe('Тестовое оповещение для скринридера');
+  });
+
+  it('memoized selectors maintain shallow equality when unrelated store data (toasts, telemetry) changes', () => {
+    const store = useAppStore.getState();
+    const navBefore = selectNavigationState(store);
+    const kanbanBefore = selectKanbanState(store);
+    const a11yBefore = selectA11yPreferences(store);
+
+    // Modify completely unrelated state: push a toast and record telemetry
+    store.addToast({
+      title: 'Unrelated Toast',
+      message: 'This should not invalidate memoized layout slices',
+      type: 'info',
+    });
+    store.recordTelemetryEvent({
+      action: 'click',
+      category: 'navigation',
+      label: 'test_button',
+    });
+
+    const stateAfter = useAppStore.getState();
+    const navAfter = selectNavigationState(stateAfter);
+    const kanbanAfter = selectKanbanState(stateAfter);
+    const a11yAfter = selectA11yPreferences(stateAfter);
+
+    // Verify shallow equality across all keys (exact reference equality for each selected field)
+    for (const key of Object.keys(navBefore) as (keyof typeof navBefore)[]) {
+      expect(navBefore[key]).toBe(navAfter[key]);
+    }
+    for (const key of Object.keys(kanbanBefore) as (keyof typeof kanbanBefore)[]) {
+      expect(kanbanBefore[key]).toBe(kanbanAfter[key]);
+    }
+    for (const key of Object.keys(a11yBefore) as (keyof typeof a11yBefore)[]) {
+      expect(a11yBefore[key]).toBe(a11yAfter[key]);
+    }
   });
 });
