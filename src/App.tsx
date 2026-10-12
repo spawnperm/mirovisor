@@ -21,7 +21,7 @@ import { ObservabilityView } from './components/observability/ObservabilityView'
 import { LlmWikiView } from './components/wiki/LlmWikiView';
 import { UniversalSearchModal } from './components/search/UniversalSearchModal';
 import { PortalTerminalDrawer } from './components/devtools/PortalTerminalDrawer';
-import { VoiceControlModal, VoiceActionResult } from './components/devtools/VoiceControlModal';
+import { VoiceControlModal, VoiceActionResult, ConversationTurn } from './components/devtools/VoiceControlModal';
 
 import {
   INITIAL_TENANTS,
@@ -402,9 +402,89 @@ export default function App() {
     }
   };
 
-  // Voice Command parser & portal programming executor
-  const handleExecuteVoiceCommand = (commandText: string): VoiceActionResult => {
-    const text = commandText.toLowerCase();
+  // Voice Command parser & portal programming executor with conversational memory
+  const handleExecuteVoiceCommand = (
+    commandText: string,
+    conversationMemory: ConversationTurn[] = []
+  ): VoiceActionResult => {
+    const text = commandText.toLowerCase().trim();
+
+    // Context Analysis: Find prior turns in the conversation memory array
+    const priorUserTurns = conversationMemory.filter(
+      (t) => t.role === 'user' && t.text.toLowerCase().trim() !== text
+    );
+    const lastUserTurn = priorUserTurns.length > 0 ? priorUserTurns[priorUserTurns.length - 1] : null;
+
+    const priorEntityTurns = conversationMemory.filter(
+      (t) => t.role === 'agent' && t.affectedEntity
+    );
+    const lastEntityTurn = priorEntityTurns.length > 0 ? priorEntityTurns[priorEntityTurns.length - 1] : null;
+
+    // A. Memory Context Inquiry: "Что мы сделали только что?" / "Какая была прошлая команда?"
+    if (
+      text.includes('что мы') ||
+      text.includes('что только что') ||
+      text.includes('прошлая команда') ||
+      text.includes('прошлый шаг') ||
+      (text.includes('предыдущ') && (text.includes('что') || text.includes('команд') || text.includes('шаг') || text.includes('действие'))) ||
+      text.includes('контекст диалога') ||
+      text.includes('память сессии')
+    ) {
+      if (lastUserTurn) {
+        const entityInfo = lastEntityTurn?.affectedEntity
+          ? ` Связанный объект в контексте: [${lastEntityTurn.affectedEntity}].`
+          : '';
+        return {
+          intent: 'memory_recall',
+          responseSpeech: `В предыдущем шаге вы скомандовали: «${lastUserTurn.text}».${entityInfo} Всего в оперативной памяти сейчас ${conversationMemory.length} реплик сессии. Я помню полный контекст разговора!`,
+          details: `Контекст извлечен из памяти: последняя команда «${lastUserTurn.text}» (${lastUserTurn.timestamp}).`,
+          affectedEntity: lastEntityTurn?.affectedEntity,
+        };
+      } else {
+        return {
+          intent: 'memory_recall',
+          responseSpeech: `В памяти пока нет предыдущих команд — это начало нашей диалоговой сессии. Я готов выполнять инструкции и сохранять контекст.`,
+          details: `Массив памяти инициализирован. Реплик: ${conversationMemory.length}.`,
+        };
+      }
+    }
+
+    // B. Memory Context Repeat: "Повтори предыдущую команду" / "Запусти еще раз" / "Сделай снова"
+    if (
+      (text.includes('повтори') || text.includes('еще раз') || text.includes('снова')) &&
+      (text.includes('команд') || text.includes('прошл') || text.includes('предыдущ') || text.includes('действие') || text.length < 30)
+    ) {
+      if (lastUserTurn) {
+        const repeatedResult = handleExecuteVoiceCommand(lastUserTurn.text, conversationMemory.slice(0, -1));
+        return {
+          ...repeatedResult,
+          intent: `repeat_${repeatedResult.intent}`,
+          responseSpeech: `Повторяю из памяти команду «${lastUserTurn.text}»: ${repeatedResult.responseSpeech}`,
+          details: `Повторно исполнено из памяти сессии: «${lastUserTurn.text}»`,
+        };
+      } else {
+        return {
+          intent: 'repeat_command',
+          responseSpeech: `В массиве памяти нет сохраненных предыдущих команд для повторения. Произнесите команду или выберите из списка.`,
+          details: `Память не содержит предыдущих команд пользователя.`,
+        };
+      }
+    }
+
+    // C. Memory Context Entity Action: "Удали его" / "Откати этот плагин" / "Открой его код"
+    if (
+      (text.includes('удали его') || text.includes('удали этот плагин') || text.includes('откати этот плагин') || text.includes('убери его')) &&
+      lastEntityTurn && lastEntityTurn.affectedEntity?.startsWith('plugin-voice-')
+    ) {
+      const targetPluginId = lastEntityTurn.affectedEntity;
+      setPlugins((prev) => prev.filter((p) => p.id !== targetPluginId));
+      return {
+        intent: 'rollback_plugin',
+        responseSpeech: `На основе контекста разговора я нашел созданный плагин ${targetPluginId} и удалил его из активного реестра.`,
+        details: `Плагин [${targetPluginId}] успешно удален по контекстной ссылке из памяти.`,
+        affectedEntity: targetPluginId,
+      };
+    }
 
     // 1. Programming & Scaffolding new Backstage micro-frontend plugin
     if (text.includes('плагин') && (text.includes('создай') || text.includes('создать') || text.includes('студи') || text.includes('бэкстейдж') || text.includes('backstage'))) {

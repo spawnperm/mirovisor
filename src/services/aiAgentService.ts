@@ -212,12 +212,16 @@ export class AiAgentService {
     timestamp: string;
     actionResult?: string;
     interrupted?: boolean;
+    intent?: string;
+    affectedEntity?: string;
+    metadata?: Record<string, any>;
   }> = [
     {
       id: 'init_welcome',
       role: 'agent',
-      text: 'Голосовой агент платформы «Мировизор» на связи. Вы можете программировать портал, создавать плагины, запускать тесты и переключать тенанты. Если захотите прервать меня, просто заговорите или нажмите микрофон!',
+      text: 'Голосовой агент платформы «Мировизор» на связи. Вы можете программировать портал, создавать плагины, запускать тесты и переключать тенанты. Поддерживается перебивание (barge-in): если я говорю, просто начните говорить или нажмите кнопку перебивания!',
       timestamp: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      intent: 'welcome',
     },
   ];
 
@@ -230,6 +234,9 @@ export class AiAgentService {
     text: string;
     actionResult?: string;
     interrupted?: boolean;
+    intent?: string;
+    affectedEntity?: string;
+    metadata?: Record<string, any>;
   }) {
     const newTurn = {
       id: `vt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -240,7 +247,28 @@ export class AiAgentService {
     return newTurn;
   }
 
-  public markLastAgentTurnInterrupted(interruptionNote: string = 'Перебито пользователем (Barge-in)') {
+  public getLastUserTurn() {
+    for (let i = this.voiceConversationHistory.length - 1; i >= 0; i--) {
+      if (this.voiceConversationHistory[i].role === 'user') {
+        return this.voiceConversationHistory[i];
+      }
+    }
+    return null;
+  }
+
+  public getLastAffectedEntity(intentPrefix?: string) {
+    for (let i = this.voiceConversationHistory.length - 1; i >= 0; i--) {
+      const turn = this.voiceConversationHistory[i];
+      if (turn.affectedEntity) {
+        if (!intentPrefix || (turn.intent && turn.intent.startsWith(intentPrefix))) {
+          return { entity: turn.affectedEntity, intent: turn.intent, turn };
+        }
+      }
+    }
+    return null;
+  }
+
+  public markLastAgentTurnInterrupted(interruptionNote: string = '⚡ Прервано пользователем (Barge-in)') {
     for (let i = this.voiceConversationHistory.length - 1; i >= 0; i--) {
       if (this.voiceConversationHistory[i].role === 'agent') {
         this.voiceConversationHistory[i].interrupted = true;

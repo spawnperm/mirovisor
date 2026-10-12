@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Mic, 
   MicOff, 
@@ -17,8 +17,10 @@ import {
   Layers,
   Shield,
   Trash2,
-  HelpCircle,
-  AudioWaveform
+  History,
+  Activity,
+  ArrowRight,
+  Database
 } from 'lucide-react';
 import { Tenant } from '../../types';
 import { AiAgentService } from '../../services/aiAgentService';
@@ -28,22 +30,29 @@ export interface VoiceActionResult {
   responseSpeech: string;
   details?: string;
   affectedEntity?: string;
+  metadata?: Record<string, any>;
 }
 
-interface VoiceControlModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  activeTenant: Tenant;
-  onExecuteVoiceCommand: (commandText: string) => VoiceActionResult | void;
-}
-
-interface ConversationTurn {
+export interface ConversationTurn {
   id: string;
   role: 'user' | 'agent' | 'system';
   text: string;
   timestamp: string;
   actionResult?: string;
   interrupted?: boolean;
+  intent?: string;
+  affectedEntity?: string;
+  metadata?: Record<string, any>;
+}
+
+interface VoiceControlModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  activeTenant: Tenant;
+  onExecuteVoiceCommand: (
+    commandText: string,
+    conversationMemory: ConversationTurn[]
+  ) => VoiceActionResult | void;
 }
 
 export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
@@ -59,12 +68,13 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [agentSpeechProgress, setAgentSpeechProgress] = useState<number>(0);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [speechRecognitionSupported, setSpeechRecognitionSupported] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>(
     'Слушаю вас (Gemini Live Full-Duplex поток активен)...'
   );
   
-  // Conversation History
-  const [history, setHistory] = useState<ConversationTurn[]>(() => {
+  // Full Conversation Memory Array state
+  const [conversationMemory, setConversationMemory] = useState<ConversationTurn[]>(() => {
     return AiAgentService.getInstance().getVoiceConversationHistory();
   });
 
@@ -72,27 +82,24 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
   const speechTimerRef = useRef<number | null>(null);
   const progressTimerRef = useRef<number | null>(null);
   const speechSynthRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const isSpeakingRef = useRef<boolean>(false);
+
+  // Keep ref synchronized with state for event listeners
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
 
   // Auto-scroll chat history
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [history, isSpeaking]);
+  }, [conversationMemory, isSpeaking]);
 
-  useEffect(() => {
-    if (isOpen) {
-      setHistory(AiAgentService.getInstance().getVoiceConversationHistory());
-      setIsListening(true);
-      setStatusMessage('Говорите голосовую команду или вопрос по коду...');
-    } else {
-      stopAgentSpeaking(false);
-    }
-    return () => {
-      stopAgentSpeaking(false);
-    };
-  }, [isOpen]);
-
-  // Stop synthetic or simulated speech immediately on interruption
-  const stopAgentSpeaking = (wasInterruptedByUser: boolean = false) => {
+  // =========================================================================
+  // BARGE-IN INTERRUPTION MECHANISM
+  // =========================================================================
+  const stopAgentSpeaking = useCallback((wasInterruptedByUser: boolean = false) => {
+    // 1. Clear speech synthesis timers
     if (speechTimerRef.current) {
       window.clearTimeout(speechTimerRef.current);
       speechTimerRef.current = null;
@@ -101,6 +108,8 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
       window.clearInterval(progressTimerRef.current);
       progressTimerRef.current = null;
     }
+
+    // 2. Abort browser audio speech synthesis immediately
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       try {
         window.speechSynthesis.cancel();
@@ -108,12 +117,16 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
         // ignore
       }
     }
+
+    // 3. Reset speaking state
     setIsSpeaking(false);
+    isSpeakingRef.current = false;
     setAgentSpeechProgress(0);
 
+    // 4. If user initiated barge-in, mark last agent turn as interrupted
     if (wasInterruptedByUser) {
-      AiAgentService.getInstance().markLastAgentTurnInterrupted();
-      setHistory((prev) => {
+      AiAgentService.getInstance().markLastAgentTurnInterrupted('⚡ Прервано суперадмином на полуслове (Barge-in)!');
+      setConversationMemory((prev) => {
         const copy = [...prev];
         for (let i = copy.length - 1; i >= 0; i--) {
           if (copy[i].role === 'agent' && !copy[i].interrupted) {
@@ -127,20 +140,23 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
         }
         return copy;
       });
-      setStatusMessage('⚡ Голос агента прерван (Barge-in перебивание сработало)! Слушаю новую команду...');
+      setStatusMessage('⚡ Голос агента прерван (Barge-in сработал)! Слушаю вашу новую команду...');
     }
-  };
+  }, []);
 
-  // User explicitly interrupts the agent
-  const handleInterrupt = () => {
+  // Explicit user interruption action
+  const handleInterrupt = useCallback(() => {
     stopAgentSpeaking(true);
     setIsListening(true);
-  };
+  }, [stopAgentSpeaking]);
 
-  // Speak agent response with Web Speech API TTS or simulated live audio waveform
-  const startAgentSpeaking = (agentReplyText: string, onDone?: () => void) => {
+  // =========================================================================
+  // SPEECH SYNTHESIS (AUDIO PLAYBACK WITH BARGE-IN AWARENESS)
+  // =========================================================================
+  const startAgentSpeaking = useCallback((agentReplyText: string, onDone?: () => void) => {
     stopAgentSpeaking(false);
     setIsSpeaking(true);
+    isSpeakingRef.current = true;
     setAgentSpeechProgress(5);
 
     // If browser supports SpeechSynthesis and sound is on
@@ -153,12 +169,14 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
         utterance.pitch = 1.0;
         utterance.onend = () => {
           setIsSpeaking(false);
+          isSpeakingRef.current = false;
           setAgentSpeechProgress(100);
           if (progressTimerRef.current) clearInterval(progressTimerRef.current);
           if (onDone) onDone();
         };
         utterance.onerror = () => {
           setIsSpeaking(false);
+          isSpeakingRef.current = false;
           if (progressTimerRef.current) clearInterval(progressTimerRef.current);
         };
         speechSynthRef.current = utterance;
@@ -168,8 +186,8 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
       }
     }
 
-    // Visual speech timeline simulation
-    const durationMs = Math.min(Math.max(agentReplyText.length * 60, 2500), 7000);
+    // Audio progress bar simulation
+    const durationMs = Math.min(Math.max(agentReplyText.length * 60, 2500), 7500);
     const interval = 100;
     const step = (100 / (durationMs / interval));
     
@@ -185,36 +203,42 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
 
     speechTimerRef.current = window.setTimeout(() => {
       setIsSpeaking(false);
+      isSpeakingRef.current = false;
       setAgentSpeechProgress(100);
       if (progressTimerRef.current) clearInterval(progressTimerRef.current);
       if (onDone) onDone();
     }, durationMs);
-  };
+  }, [soundEnabled, stopAgentSpeaking]);
 
-  // Dispatch a command with full context & conversation memory
-  const handleProcessVoiceInput = (rawText: string) => {
+  // =========================================================================
+  // EXECUTE COMMAND DISPATCH WITH FULL CONVERSATION MEMORY ARRAY
+  // =========================================================================
+  const handleProcessVoiceInput = useCallback((rawText: string) => {
     const trimmed = rawText.trim();
     if (!trimmed) return;
 
-    // If agent is speaking, user just interrupted the agent by speaking!
-    if (isSpeaking) {
-      handleInterrupt();
+    // BARGE-IN: If agent is speaking, user just interrupted the agent!
+    if (isSpeakingRef.current) {
+      stopAgentSpeaking(true);
     }
 
     setSpokenText(trimmed);
     setIsProcessing(true);
-    setStatusMessage(`Распознавание интента: "${trimmed}"... Обработка через Gemini Live Function Calling...`);
+    setStatusMessage(`Распознавание интента: "${trimmed}"... Запрос к Gemini Live с передачей контекста диалога...`);
 
-    // Record user turn into persistent memory
+    // 1. Record user turn into persistent memory array
     const userTurn = AiAgentService.getInstance().addVoiceTurn({
       role: 'user',
       text: trimmed,
     });
-    setHistory(AiAgentService.getInstance().getVoiceConversationHistory());
+    
+    // Get snapshot of conversation memory with this new user turn
+    const currentMemory = AiAgentService.getInstance().getVoiceConversationHistory();
+    setConversationMemory(currentMemory);
 
     setTimeout(() => {
-      // Execute command in App.tsx
-      const result = onExecuteVoiceCommand(trimmed);
+      // 2. Execute command in App with full conversationMemory array passed!
+      const result = onExecuteVoiceCommand(trimmed, currentMemory);
       setIsProcessing(false);
 
       const agentReply = result && result.responseSpeech
@@ -223,61 +247,211 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
 
       const actionNote = result && result.details ? result.details : 'Исполнено в системе';
 
-      // Record agent reply into persistent memory
+      // 3. Record agent reply into persistent memory array
       AiAgentService.getInstance().addVoiceTurn({
         role: 'agent',
         text: agentReply,
         actionResult: actionNote,
+        intent: result ? result.intent : 'general',
+        affectedEntity: result ? result.affectedEntity : undefined,
       });
 
-      setHistory(AiAgentService.getInstance().getVoiceConversationHistory());
-      setStatusMessage(`Агент отвечает: воспроизведение голоса (Live TTS)...`);
+      const updatedHistory = AiAgentService.getInstance().getVoiceConversationHistory();
+      setConversationMemory(updatedHistory);
+      setStatusMessage(`Агент отвечает: воспроизведение голоса... (Вы можете перебить!)`);
 
-      // Play audio & show audio wave with interruption capability
+      // 4. Play audio with barge-in capability
       startAgentSpeaking(agentReply, () => {
         setStatusMessage('Команда завершена. Готов к следующей голосовой инструкции...');
       });
-    }, 600);
-  };
+    }, 500);
+  }, [activeTenant.name, onExecuteVoiceCommand, startAgentSpeaking, stopAgentSpeaking]);
+
+  // =========================================================================
+  // SPEECH RECOGNITION (WEB SPEECH API) FOR HANDS-FREE BARGE-IN
+  // =========================================================================
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const SpeechRecognitionAPI =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (SpeechRecognitionAPI) {
+      setSpeechRecognitionSupported(true);
+      try {
+        const recognition = new SpeechRecognitionAPI();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'ru-RU';
+
+        // When audio input starts while agent is speaking: TRIGGER BARGE-IN IMMEDIATELY!
+        recognition.onspeechstart = () => {
+          if (isSpeakingRef.current) {
+            stopAgentSpeaking(true);
+          }
+        };
+
+        recognition.onresult = (event: any) => {
+          // If agent is speaking and speech is detected, barge-in!
+          if (isSpeakingRef.current) {
+            stopAgentSpeaking(true);
+          }
+
+          let interimTranscript = '';
+          let finalTranscript = '';
+
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript;
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+
+          if (finalTranscript.trim()) {
+            handleProcessVoiceInput(finalTranscript);
+          } else if (interimTranscript.trim()) {
+            setStatusMessage(`Слышу вас: "${interimTranscript}"...`);
+          }
+        };
+
+        recognition.onerror = (err: any) => {
+          if (err.error !== 'no-speech') {
+            console.warn('SpeechRecognition error:', err.error);
+          }
+        };
+
+        if (isListening) {
+          try {
+            recognition.start();
+          } catch (e) {
+            // Already started
+          }
+        }
+
+        recognitionRef.current = recognition;
+      } catch (err) {
+        console.warn('SpeechRecognition initialization error:', err);
+      }
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          // ignore
+        }
+        recognitionRef.current = null;
+      }
+    };
+  }, [isOpen, isListening, handleProcessVoiceInput, stopAgentSpeaking]);
+
+  // Keyboard shortcut listener: Space to interrupt when speaking, Esc to close
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in the text input
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      if (e.code === 'Space' && isSpeakingRef.current) {
+        e.preventDefault();
+        handleInterrupt();
+      } else if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, handleInterrupt, onClose]);
+
+  // Sync memory on modal open
+  useEffect(() => {
+    if (isOpen) {
+      setConversationMemory(AiAgentService.getInstance().getVoiceConversationHistory());
+      setIsListening(true);
+      setStatusMessage('Говорите голосовую команду или вопрос по коду...');
+    } else {
+      stopAgentSpeaking(false);
+    }
+    return () => {
+      stopAgentSpeaking(false);
+    };
+  }, [isOpen, stopAgentSpeaking]);
 
   const handleClearHistory = () => {
     stopAgentSpeaking(false);
     AiAgentService.getInstance().clearVoiceConversationHistory();
-    setHistory([]);
-    setStatusMessage('История голосового диалога очищена.');
+    setConversationMemory([]);
+    setStatusMessage('Память сессии голосового диалога очищена.');
   };
 
-  // Interactive Programming Scenarios (one-click voice intents)
+  // Inspect last affected entity from conversation memory
+  const lastEntityTurn = conversationMemory
+    .slice()
+    .reverse()
+    .find((t) => t.role === 'agent' && t.affectedEntity);
+
+  const lastUserTurn = conversationMemory
+    .slice()
+    .reverse()
+    .find((t) => t.role === 'user');
+
+  // Interactive Programming Scenarios (including context referencing intents)
   const programmingVoiceCommands = [
     {
-      category: 'Программирование & CI/CD',
-      cmd: 'Запустить цикл CI/CD и сгенерировать рекомендацию по оптимизации кода',
-      icon: Terminal,
+      category: 'Контекст & Память',
+      cmd: 'Что мы сделали только что в предыдущей команде?',
+      icon: History,
+      color: 'text-amber-400',
     },
     {
-      category: 'Бэкстейдж & Плагины',
+      category: 'Контекст & Повтор',
+      cmd: 'Повторить предыдущую выполненную команду',
+      icon: RotateCcw,
+      color: 'text-amber-400',
+    },
+    {
+      category: 'Программирование микрофронтендов',
       cmd: 'Создать новый микрофронтенд плагин в Plugin Studio',
       icon: Code,
+      color: 'text-cyan-400',
     },
     {
-      category: 'Откат изменений',
-      cmd: 'Откатить последнее внедренное изменение кода',
-      icon: RotateCcw,
+      category: 'CI/CD & Анализ',
+      cmd: 'Запустить цикл CI/CD и сгенерировать рекомендацию по оптимизации кода',
+      icon: Terminal,
+      color: 'text-cyan-400',
     },
     {
       category: 'Аудит безопасности',
       cmd: 'Запустить аудит безопасности и проверить RLS изоляцию',
       icon: Shield,
+      color: 'text-emerald-400',
+    },
+    {
+      category: 'Откат изменений',
+      cmd: 'Откатить последнее внедренное изменение кода',
+      icon: RotateCcw,
+      color: 'text-rose-400',
     },
     {
       category: 'Канбан & Задачи',
       cmd: 'Показать канбан доску и статус задач',
       icon: Layers,
+      color: 'text-purple-400',
     },
     {
-      category: 'Переключение тенанта',
+      category: 'Мультитенантность',
       cmd: 'Переключить контекст тенанта на холдинг ACME',
-      icon: Sparkles,
+      icon: Database,
+      color: 'text-blue-400',
     },
   ];
 
@@ -297,14 +471,27 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-white flex items-center gap-1.5 font-mono tracking-wide">
                   <Sparkles className="w-4 h-4 text-cyan-400" />
-                  GEMINI LIVE · ГОЛОСОВОЕ ПРОГРАММИРОВАНИЕ ПОРТАЛА
+                  ГОЛОСОВОЕ ПРОГРАММИРОВАНИЕ ПОРТАЛА
                 </h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-800 text-cyan-300 font-mono">
-                  Full-Duplex + Barge-in
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-800 text-cyan-300 font-mono flex items-center gap-1">
+                  <Zap className="w-2.5 h-2.5 text-amber-400" />
+                  Barge-in + Память сессии
                 </span>
               </div>
-              <p className="text-[11px] text-neutral-400">
-                Активный тенант: <span className="text-cyan-300 font-semibold">{activeTenant.name}</span> ({activeTenant.schema}) · Контекст сохраняется
+              <p className="text-[11px] text-neutral-400 flex items-center gap-1.5 mt-0.5">
+                <span>Тенант: <span className="text-cyan-300 font-semibold">{activeTenant.name}</span> ({activeTenant.schema})</span>
+                <span>•</span>
+                <span className="text-emerald-400 font-mono text-[10px]">
+                  Память: {conversationMemory.length} реплик
+                </span>
+                {lastEntityTurn?.affectedEntity && (
+                  <>
+                    <span>•</span>
+                    <span className="text-neutral-400 text-[10px] truncate max-w-[120px]" title={lastEntityTurn.affectedEntity}>
+                      Объект: {lastEntityTurn.affectedEntity}
+                    </span>
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -338,38 +525,42 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
         <div className="p-4 bg-gradient-to-b from-neutral-950/80 to-neutral-900 border-b border-neutral-800 flex flex-col items-center text-center relative">
           {/* Status badge */}
           <div className="flex items-center gap-2 mb-3">
-            <span className={`text-[11px] px-2.5 py-1 rounded-full font-mono flex items-center gap-1.5 ${
+            <span className={`text-[11px] px-3 py-1 rounded-full font-mono flex items-center gap-1.5 transition-all ${
               isSpeaking 
-                ? 'bg-amber-950/80 border border-amber-600/70 text-amber-200' 
+                ? 'bg-amber-950/90 border border-amber-500 text-amber-200 shadow-lg shadow-amber-950/50 animate-pulse' 
                 : isProcessing 
                 ? 'bg-cyan-950/80 border border-cyan-600/70 text-cyan-200'
                 : 'bg-neutral-800 text-neutral-300'
             }`}>
               {isSpeaking ? (
                 <>
-                  <Radio className="w-3 h-3 text-amber-400 animate-pulse" />
-                  Агент говорит вслух... (Вы можете перебить в любой момент!)
+                  <Radio className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                  <span>Агент говорит вслух... (Вы можете перебить голосом или кнопкой!)</span>
                 </>
               ) : isProcessing ? (
                 <>
                   <span className="w-2.5 h-2.5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-                  Обработка интента и вызов API портала...
+                  <span>Исполнение команды в ядре портала и обновление памяти...</span>
                 </>
               ) : (
                 <>
                   <Mic className="w-3 h-3 text-emerald-400" />
-                  Микрофон открыт. Говорите или выберите команду.
+                  <span>
+                    {speechRecognitionSupported 
+                      ? 'Микрофон активен. Говорите свободно или перебивайте в любой момент.' 
+                      : 'Выберите готовую голосовую команду или введите запрос'}
+                  </span>
                 </>
               )}
             </span>
           </div>
 
-          {/* Central Animated Mic Orb */}
+          {/* Central Animated Mic Orb with Barge-In Action */}
           <div className="relative my-2 flex items-center justify-center">
             {isSpeaking && (
               <>
-                <div className="absolute w-28 h-28 bg-amber-500/20 rounded-full animate-ping" />
-                <div className="absolute w-20 h-20 bg-amber-500/30 rounded-full animate-pulse" />
+                <div className="absolute w-28 h-28 bg-amber-500/25 rounded-full animate-ping" />
+                <div className="absolute w-20 h-20 bg-rose-500/30 rounded-full animate-pulse" />
               </>
             )}
             {isListening && !isSpeaking && (
@@ -387,17 +578,23 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
                   setIsListening(!isListening);
                 }
               }}
-              className={`relative z-10 w-16 h-16 rounded-full flex items-center justify-center shadow-xl transition-all duration-200 hover:scale-105 ${
+              className={`relative z-10 w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-all duration-200 hover:scale-105 ${
                 isSpeaking
-                  ? 'bg-gradient-to-tr from-amber-600 to-rose-600 text-white shadow-amber-500/40 ring-4 ring-amber-400/50'
+                  ? 'bg-gradient-to-tr from-rose-600 via-amber-600 to-rose-500 text-white shadow-rose-500/50 ring-4 ring-amber-400/80 animate-pulse'
                   : isListening
                   ? 'bg-gradient-to-tr from-purple-600 to-cyan-500 text-white shadow-cyan-500/30 ring-2 ring-cyan-400/30'
                   : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
               }`}
-              title={isSpeaking ? 'Нажмите, чтобы перебить агента (Barge-in)' : isListening ? 'Отключить микрофон' : 'Включить микрофон'}
+              title={
+                isSpeaking 
+                  ? 'Перебить агента прямо сейчас (Barge-in / Пробел)' 
+                  : isListening 
+                  ? 'Отключить микрофон' 
+                  : 'Включить микрофон'
+              }
             >
               {isSpeaking ? (
-                <Zap className="w-8 h-8 animate-pulse text-white" />
+                <Zap className="w-8 h-8 text-amber-200" />
               ) : isListening ? (
                 <Mic className="w-8 h-8" />
               ) : (
@@ -406,53 +603,61 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
             </button>
           </div>
 
-          {/* Barge-in Interruption Action Button (Always visible when agent is speaking) */}
-          {isSpeaking && (
-            <button
-              onClick={handleInterrupt}
-              className="mt-3 px-4 py-1.5 bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white rounded-full text-xs font-semibold flex items-center gap-2 shadow-lg shadow-rose-900/40 transition-transform active:scale-95 animate-bounce"
-            >
-              <Zap className="w-3.5 h-3.5" />
-              ПЕРЕБИТЬ АГЕНТА (Barge-in)
-            </button>
+          {/* Barge-in Interruption Action Button (Prominent when agent speaks) */}
+          {isSpeaking ? (
+            <div className="mt-3 flex items-center gap-2 animate-bounce">
+              <button
+                onClick={handleInterrupt}
+                className="px-5 py-2 bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white rounded-full text-xs font-bold flex items-center gap-2 shadow-xl shadow-rose-950/60 ring-2 ring-amber-400/50 transition-all active:scale-95"
+              >
+                <Zap className="w-4 h-4 fill-white" />
+                ПЕРЕБИТЬ АГЕНТА (Barge-in)
+                <kbd className="ml-1 px-1.5 py-0.5 bg-black/40 text-[10px] font-mono rounded">Пробел</kbd>
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs text-neutral-400 mt-2 max-w-md font-sans">{statusMessage}</p>
           )}
 
           {/* Audio progress bar if speaking */}
           {isSpeaking && (
             <div className="w-full max-w-xs mt-3 bg-neutral-800 h-1.5 rounded-full overflow-hidden">
               <div 
-                className="bg-amber-400 h-full transition-all duration-100 ease-out"
+                className="bg-gradient-to-r from-amber-400 to-rose-400 h-full transition-all duration-100 ease-out"
                 style={{ width: `${agentSpeechProgress}%` }}
               />
             </div>
           )}
-
-          <p className="text-xs text-neutral-400 mt-2 max-w-md font-sans">{statusMessage}</p>
         </div>
 
-        {/* Conversation Dialog Area with Full History / Context */}
+        {/* Conversation Dialog Area with Full Memory Array */}
         <div className="p-4 overflow-y-auto max-h-56 min-h-[160px] bg-neutral-950/40 space-y-3 font-sans text-xs custom-scrollbar">
-          <div className="flex items-center justify-between text-[11px] font-mono text-neutral-500 border-b border-neutral-850 pb-1">
-            <span className="flex items-center gap-1">
-              <MessageSquare className="w-3 h-3 text-cyan-400" />
-              КОНТЕКСТ ДИАЛОГА ({history.length} реплик в памяти):
+          <div className="flex items-center justify-between text-[11px] font-mono text-neutral-500 border-b border-neutral-850 pb-1.5">
+            <span className="flex items-center gap-1.5 text-cyan-400">
+              <MessageSquare className="w-3.5 h-3.5" />
+              ПАМЯТЬ СЕССИИ ({conversationMemory.length} реплик в контексте):
             </span>
-            <span className="text-neutral-500">Автоматически сохраняется между запросами</span>
+            <div className="flex items-center gap-2 text-[10px] text-neutral-400">
+              <span className="flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                Контекст сохраняется
+              </span>
+            </div>
           </div>
 
-          {history.length === 0 ? (
+          {conversationMemory.length === 0 ? (
             <div className="py-6 text-center text-neutral-500 text-xs">
-              История пуста. Начните говорить или выберите команду программирования.
+              История диалога пуста. Скажите команду или выберите быстрый интент ниже.
             </div>
           ) : (
-            history.map((turn) => (
+            conversationMemory.map((turn) => (
               <div
                 key={turn.id}
                 className={`p-3 rounded-2xl border transition-all ${
                   turn.role === 'user'
                     ? 'bg-neutral-800/90 border-cyan-800/60 ml-8 text-neutral-100 shadow-xs'
                     : 'bg-neutral-900/90 border-neutral-800 mr-8 text-neutral-200 shadow-sm'
-                } ${turn.interrupted ? 'border-amber-600/70 bg-amber-950/20' : ''}`}
+                } ${turn.interrupted ? 'border-amber-500/80 bg-amber-950/30' : ''}`}
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-semibold flex items-center gap-1.5">
@@ -467,7 +672,14 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
                       </>
                     )}
                   </span>
-                  <span className="text-[10px] text-neutral-500 font-mono">{turn.timestamp}</span>
+                  <div className="flex items-center gap-2 text-[10px] text-neutral-500 font-mono">
+                    {turn.interrupted && (
+                      <span className="text-amber-400 px-1.5 py-0.2 rounded bg-amber-950/80 border border-amber-800 flex items-center gap-0.5">
+                        <Zap className="w-2.5 h-2.5" /> Прервано
+                      </span>
+                    )}
+                    <span>{turn.timestamp}</span>
+                  </div>
                 </div>
 
                 <p className="text-xs leading-relaxed">{turn.text}</p>
@@ -475,11 +687,17 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
                 {turn.actionResult && (
                   <div className={`mt-2 p-1.5 px-2.5 rounded-lg text-[11px] font-mono flex items-center justify-between ${
                     turn.interrupted
-                      ? 'bg-amber-950/60 text-amber-300 border border-amber-800/60'
+                      ? 'bg-amber-950/70 text-amber-200 border border-amber-700/80'
                       : 'bg-neutral-950/70 text-cyan-300 border border-neutral-800'
                   }`}>
-                    <span>{turn.actionResult}</span>
-                    {turn.interrupted && <Zap className="w-3 h-3 text-amber-400" />}
+                    <span className="truncate">{turn.actionResult}</span>
+                    {turn.interrupted ? (
+                      <Zap className="w-3 h-3 text-amber-400 shrink-0 ml-1.5" />
+                    ) : turn.affectedEntity ? (
+                      <span className="text-[10px] text-neutral-400 shrink-0 ml-1.5 font-mono">
+                        [{turn.affectedEntity}]
+                      </span>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -488,11 +706,16 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
           <div ref={chatBottomRef} />
         </div>
 
-        {/* Quick Voice Programming Chips */}
+        {/* Quick Voice Programming & Context Chips */}
         <div className="p-4 bg-neutral-950/80 border-t border-neutral-800">
           <div className="text-[11px] font-mono text-neutral-400 uppercase tracking-wider mb-2 flex items-center justify-between">
-            <span>Программирование портала голосом (Готовые интенты):</span>
-            <span className="text-neutral-500">Нажмите для симуляции речи</span>
+            <span className="flex items-center gap-1.5">
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              Команды программирования & Контекстная память:
+            </span>
+            <span className="text-neutral-500 text-[10px]">
+              Клик прерывает речь агента при необходимости
+            </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
@@ -506,7 +729,7 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
                   className="p-2 bg-neutral-900/90 hover:bg-neutral-800 border border-neutral-800 hover:border-cyan-700/60 rounded-xl text-xs text-neutral-300 text-left flex items-center justify-between group transition-all"
                 >
                   <div className="flex items-center gap-2 truncate">
-                    <IconComponent className="w-3.5 h-3.5 text-cyan-400 shrink-0 group-hover:scale-110 transition-transform" />
+                    <IconComponent className={`w-3.5 h-3.5 ${item.color} shrink-0 group-hover:scale-110 transition-transform`} />
                     <span className="truncate">«{item.cmd}»</span>
                   </div>
                   <Play className="w-3 h-3 text-neutral-600 group-hover:text-cyan-400 shrink-0 ml-1.5 transition-colors" />
@@ -515,19 +738,19 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
             })}
           </div>
 
-          {/* Manual Prompt Input for quiet environments / testing custom voice queries */}
+          {/* Manual Prompt Input for quiet testing or custom queries */}
           <div className="mt-3 flex items-center gap-2">
             <input
               type="text"
               value={customInput}
               onChange={(e) => setCustomInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && customInput.trim()) {
                   handleProcessVoiceInput(customInput);
                   setCustomInput('');
                 }
               }}
-              placeholder="Или введите голосовой запрос вручную (например: «создай плагин виджета»)..."
+              placeholder="Или введите команду вручную (например: «что мы сделали только что?»)..."
               className="flex-1 bg-neutral-900 border border-neutral-800 focus:border-cyan-500/70 rounded-xl px-3.5 py-1.5 text-xs text-neutral-200 placeholder:text-neutral-500 outline-none transition-colors"
             />
             <button
@@ -538,7 +761,7 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
                 }
               }}
               disabled={!customInput.trim() || isProcessing}
-              className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:bg-neutral-800 disabled:text-neutral-600 text-white rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors"
+              className="px-3.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:bg-neutral-800 disabled:text-neutral-600 text-white rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors"
             >
               <Send className="w-3 h-3" />
               Исполнить
@@ -547,10 +770,10 @@ export const VoiceControlModal: React.FC<VoiceControlModalProps> = ({
 
           <div className="flex items-center justify-between text-[11px] text-neutral-500 font-mono mt-3">
             <span>
-              Горячая клавиша вызова: <kbd className="px-1.5 py-0.5 bg-neutral-800 text-neutral-300 rounded">Ctrl</kbd> + <kbd className="px-1.5 py-0.5 bg-neutral-800 text-neutral-300 rounded">V</kbd>
+              Горячая клавиша: <kbd className="px-1.5 py-0.5 bg-neutral-800 text-neutral-300 rounded">Ctrl+V</kbd> (вызов), <kbd className="px-1.5 py-0.5 bg-neutral-800 text-neutral-300 rounded">Пробел</kbd> (barge-in)
             </span>
             <span className="text-emerald-400 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3" /> Перебивание (Barge-in) и контекст активны
+              <CheckCircle2 className="w-3 h-3" /> Перебивание (Barge-in) & Контекстная память
             </span>
           </div>
         </div>
