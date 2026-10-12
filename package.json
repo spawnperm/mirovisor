@@ -1,8 +1,7 @@
 {
-  "name": "mirovisor",
+  "name": "react-example",
   "private": true,
-  "version": "1.0.0",
-  "description": "Multi-tenant interactive data visualization and engineering evolution platform",
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
@@ -10,18 +9,18 @@
     "build:server": "esbuild server.ts --bundle --platform=node --target=node20 --format=esm --packages=external --outfile=server.mjs",
     "build:all": "npm run build && npm run build:server",
     "postbuild": "node scripts/auto-commit-on-build.mjs",
-    "build:commit": "npm run test && npm run build:all",
+    "build:commit": "npm run lint && npm run test && npm run build:all",
     "preview": "vite preview",
     "start": "node server.mjs",
     "clean": "rm -rf dist server.mjs",
     "lint": "tsc --noEmit",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test": "vitest run"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "^5.104.2",
+    "@types/d3": "^7.4.3",
     "@vitejs/plugin-react": "^6.1.1",
     "d3": "^7.9.0",
     "dotenv": "^17.2.3",
@@ -37,13 +36,12 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@types/d3": "^7.4.3",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",
-    "esbuild": "^0.28.0",
+    "esbuild": "^0.25.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",
