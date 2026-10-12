@@ -14,12 +14,14 @@ import {
   AlertTriangle,
   ArrowRight,
   Boxes,
-  Zap
+  Zap,
+  Radio
 } from 'lucide-react';
 import { Tenant, KanbanCard, SecurityFinding } from '../../types';
 import { ActiveVoiceSession } from '../devtools/ActiveVoiceSession';
 import { ConversationTurn } from '../devtools/VoiceControlModal';
 import { VoiceMacro } from '../../types/macros';
+import { D3ForceDirectedMesh } from './D3ForceDirectedMesh';
 
 interface MultidimensionalVisualizerProps {
   tenants: Tenant[];
@@ -27,6 +29,7 @@ interface MultidimensionalVisualizerProps {
   cards: KanbanCard[];
   securityFindings: SecurityFinding[];
   onSelectEntity?: (type: string, id: string) => void;
+  onSelectTenant?: (tenant: Tenant) => void;
   voiceMemory?: ConversationTurn[];
   macros?: VoiceMacro[];
   onOpenVoice?: () => void;
@@ -35,7 +38,7 @@ interface MultidimensionalVisualizerProps {
   onExecuteMacro?: (macro: VoiceMacro) => void;
 }
 
-type DimensionMode = 'topology' | 'tenants_cluster' | 'agent_flow' | 'security_matrix';
+type DimensionMode = 'force_mesh' | 'topology' | 'tenants_cluster' | 'agent_flow' | 'security_matrix';
 
 interface GraphNode {
   id: string;
@@ -62,6 +65,7 @@ export const MultidimensionalDataVisualizer: React.FC<MultidimensionalVisualizer
   cards,
   securityFindings,
   onSelectEntity,
+  onSelectTenant,
   voiceMemory,
   macros,
   onOpenVoice,
@@ -69,7 +73,7 @@ export const MultidimensionalDataVisualizer: React.FC<MultidimensionalVisualizer
   onExecuteVoiceCommand,
   onExecuteMacro,
 }) => {
-  const [dimension, setDimension] = useState<DimensionMode>('topology');
+  const [dimension, setDimension] = useState<DimensionMode>('force_mesh');
   const [zoom, setZoom] = useState<number>(1);
   const [searchFilter, setSearchFilter] = useState<string>('');
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
@@ -177,6 +181,17 @@ export const MultidimensionalDataVisualizer: React.FC<MultidimensionalVisualizer
 
         {/* Dimension Switcher */}
         <div className="flex items-center gap-1 bg-neutral-950 p-1 rounded-lg border border-neutral-800 text-xs">
+          <button
+            onClick={() => setDimension('force_mesh')}
+            className={`px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
+              dimension === 'force_mesh'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm font-semibold'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+            D3.js Силовой граф
+          </button>
           <button
             onClick={() => setDimension('topology')}
             className={`px-3 py-1.5 rounded-md font-medium transition-colors flex items-center gap-1.5 ${
@@ -286,7 +301,19 @@ export const MultidimensionalDataVisualizer: React.FC<MultidimensionalVisualizer
       )}
 
       {/* Canvas / Visualization Surface */}
-      <div className="relative flex-1 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] overflow-auto flex items-center justify-center p-6">
+      <div className="relative flex-1 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] overflow-auto flex items-center justify-center p-0">
+        {/* DIMENSION: D3 FORCE-DIRECTED MESH */}
+        {dimension === 'force_mesh' && (
+          <div className="w-full h-full absolute inset-0">
+            <D3ForceDirectedMesh
+              tenants={tenants}
+              activeTenant={activeTenant}
+              onSelectTenant={onSelectTenant}
+              onSelectEntity={onSelectEntity}
+            />
+          </div>
+        )}
+
         {/* DIMENSION: SERVICE MESH / TOPOLOGY */}
         {dimension === 'topology' && (
           <div

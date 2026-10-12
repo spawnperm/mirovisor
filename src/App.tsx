@@ -19,6 +19,7 @@ import { LmsCourseView } from './components/lms/LmsCourseView';
 import { SecurityCenterView } from './components/security/SecurityCenterView';
 import { ObservabilityView } from './components/observability/ObservabilityView';
 import { LlmWikiView } from './components/wiki/LlmWikiView';
+import { EngineeringAuditView } from './components/audit/EngineeringAuditView';
 import { UniversalSearchModal } from './components/search/UniversalSearchModal';
 import { PortalTerminalDrawer } from './components/devtools/PortalTerminalDrawer';
 import { VoiceControlModal, VoiceActionResult, ConversationTurn } from './components/devtools/VoiceControlModal';
@@ -73,7 +74,7 @@ export default function App() {
   const [securityFindings, setSecurityFindings] = useState<SecurityFinding[]>(INITIAL_SECURITY_FINDINGS);
   const [metrics, setMetrics] = useState(INITIAL_METRICS);
 
-  const [activeTab, setActiveTab] = useState<NavTabId>('visualizer');
+  const [activeTab, setActiveTab] = useState<NavTabId>('audit');
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
   const [isTerminalOpen, setIsTerminalOpen] = useState<boolean>(false);
   const [isVoiceOpen, setIsVoiceOpen] = useState<boolean>(false);
@@ -912,6 +913,8 @@ export const VoiceWidget = createComponentExtension({
 
       {/* Main View Area */}
       <main className="flex-1 overflow-hidden relative">
+        {activeTab === 'audit' && <EngineeringAuditView />}
+
         {activeTab === 'visualizer' && (
           <MultidimensionalDataVisualizer
             tenants={tenants}
@@ -924,6 +927,7 @@ export const VoiceWidget = createComponentExtension({
             onOpenMacroRegistry={() => setIsMacroRegistryOpen(true)}
             onExecuteVoiceCommand={handleExecuteVoiceCommand}
             onExecuteMacro={handleExecuteMacro}
+            onSelectTenant={(t) => setActiveTenant(t)}
             onSelectEntity={(type, id) => {
               if (type === 'tenant') {
                 const found = tenants.find((t) => t.id === id);

@@ -20,7 +20,8 @@ import {
   Building,
   FolderTree,
   Check,
-  X
+  X,
+  Cpu
 } from 'lucide-react';
 import { Tenant, User } from '../../types';
 
@@ -30,6 +31,7 @@ interface TenantTreeNode {
 }
 
 export type NavTabId = 
+  | 'audit'
   | 'visualizer' 
   | 'pipelines'
   | 'kanban' 
@@ -292,6 +294,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const tabs: { id: NavTabId; label: string; icon: React.ReactNode }[] = [
+    { id: 'audit', label: 'Аудит & Модернизация', icon: <Cpu className="w-3.5 h-3.5 text-cyan-400" /> },
     { id: 'visualizer', label: 'Визуализатор', icon: <Network className="w-3.5 h-3.5" /> },
     { id: 'pipelines', label: 'CI/CD Пайплайны', icon: <Terminal className="w-3.5 h-3.5" /> },
     { id: 'kanban', label: 'Канбан Идей', icon: <Layers className="w-3.5 h-3.5" /> },

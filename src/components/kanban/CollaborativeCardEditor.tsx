@@ -15,7 +15,9 @@ import {
   GitCommit,
   Wifi,
   WifiOff,
-  UserCheck
+  UserCheck,
+  Save,
+  Check
 } from 'lucide-react';
 import { KanbanCard, ChecklistItem } from '../../types';
 import { 
@@ -38,6 +40,13 @@ export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = (
   const [description, setDescription] = useState<string>(card.description);
   const [checklist, setChecklist] = useState<ChecklistItem[]>(card.checklist);
   const [newItemText, setNewItemText] = useState<string>('');
+
+  // Auto-save via localStorage state & refs
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'restored' | 'idle'>('idle');
+  const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
+  const [isDraftRestored, setIsDraftRestored] = useState<boolean>(false);
+  const autoSaveTimerRef = useRef<any>(null);
+  const latestDescRef = useRef<string>(card.description);
   
   // Collaborative provider state
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
@@ -59,16 +68,38 @@ export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = (
   const undoManagerRef = useRef<Y.UndoManager | null>(null);
   const providerRef = useRef<MirovisorCollaborativeProvider | null>(null);
 
-  // Initialize Y.Doc, Collaborative Provider & CRDT structures
+  // Initialize Y.Doc, Collaborative Provider & CRDT structures with localStorage auto-restore
   useEffect(() => {
+    const draftKey = `mirovisor_card_draft_${card.id}`;
+    let initialDescription = card.description;
+
+    try {
+      if (typeof window !== 'undefined') {
+        const savedDraft = localStorage.getItem(draftKey);
+        if (savedDraft) {
+          const parsed = JSON.parse(savedDraft);
+          if (parsed && typeof parsed.description === 'string' && parsed.description !== card.description) {
+            initialDescription = parsed.description;
+            setDescription(initialDescription);
+            latestDescRef.current = initialDescription;
+            setIsDraftRestored(true);
+            setAutoSaveStatus('restored');
+            setLastSavedTime(parsed.savedAt || new Date(parsed.timestamp || Date.now()).toLocaleTimeString());
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to parse card draft from localStorage:', err);
+    }
+
     const doc = new Y.Doc();
     ydocRef.current = doc;
 
     // Y.Text for collaborative description
     const yText = doc.getText('description');
     yTextRef.current = yText;
-    if (yText.length === 0 && card.description) {
-      yText.insert(0, card.description);
+    if (yText.length === 0 && initialDescription) {
+      yText.insert(0, initialDescription);
     }
 
     // Y.Array for collaborative checklist
@@ -134,14 +165,58 @@ export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = (
 
     providerRef.current = provider;
 
+    const handleBeforeUnload = () => {
+      if (latestDescRef.current && latestDescRef.current !== card.description) {
+        try {
+          localStorage.setItem(draftKey, JSON.stringify({
+            description: latestDescRef.current,
+            timestamp: Date.now(),
+            savedAt: new Date().toLocaleTimeString(),
+          }));
+        } catch {}
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       provider.destroy();
       doc.destroy();
     };
   }, [card.id]);
 
-  // Handle local user description editing via Y.Text transaction
+  // Handle local user description editing via Y.Text transaction with debounced localStorage auto-save
   const handleDescriptionChange = (newVal: string) => {
+    latestDescRef.current = newVal;
+    setDescription(newVal);
+    setAutoSaveStatus('saving');
+
+    // Debounce save to localStorage
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      try {
+        const draftKey = `mirovisor_card_draft_${card.id}`;
+        if (newVal === card.description) {
+          localStorage.removeItem(draftKey);
+          setAutoSaveStatus('idle');
+          setLastSavedTime(null);
+        } else {
+          const timeStr = new Date().toLocaleTimeString();
+          localStorage.setItem(draftKey, JSON.stringify({
+            description: newVal,
+            timestamp: Date.now(),
+            savedAt: timeStr,
+          }));
+          setAutoSaveStatus('saved');
+          setLastSavedTime(timeStr);
+        }
+      } catch (err) {
+        console.warn('Auto-save to localStorage failed:', err);
+      }
+    }, 350);
+
     const yText = yTextRef.current;
     const doc = ydocRef.current;
     if (!yText || !doc) return;
@@ -164,6 +239,30 @@ export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = (
     setTimeout(() => {
       providerRef.current?.setLocalStatus('active');
     }, 1200);
+  };
+
+  const handleDiscardDraft = () => {
+    try {
+      localStorage.removeItem(`mirovisor_card_draft_${card.id}`);
+    } catch {}
+    setIsDraftRestored(false);
+    setAutoSaveStatus('idle');
+    setLastSavedTime(null);
+
+    const yText = yTextRef.current;
+    const doc = ydocRef.current;
+    if (yText && doc) {
+      doc.transact(() => {
+        yText.delete(0, yText.length);
+        yText.insert(0, card.description);
+      }, 'local_user');
+    }
+    setDescription(card.description);
+    latestDescRef.current = card.description;
+    onCardUpdate({
+      ...card,
+      description: card.description,
+    });
   };
 
   // Add checklist item via Y.Array
@@ -382,15 +481,65 @@ export const CollaborativeCardEditor: React.FC<CollaborativeCardEditorProps> = (
         </div>
       </div>
 
-      {/* Collaborative Description (Y.Text) */}
+      {/* Collaborative Description (Y.Text) with LocalStorage Auto-Save */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <h4 className="font-semibold text-neutral-400 uppercase tracking-wider text-[11px]">
-            Описание задачи (Y.Text в реальном времени):
+          <h4 className="font-semibold text-neutral-400 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+            <span>Описание задачи (Y.Text в реальном времени):</span>
           </h4>
           <span className="text-[10px] font-mono text-neutral-500">
-            Y.Text CRDT + Provider Sync · Правки синхронизируются мгновенно
+            Y.Text CRDT + LocalStorage Auto-Save
           </span>
+        </div>
+
+        {/* LocalStorage Auto-Save Status Bar */}
+        <div className="flex items-center justify-between px-2.5 py-1.5 bg-neutral-950/90 rounded-lg border border-neutral-850 text-[11px]">
+          <div className="flex items-center gap-2">
+            {autoSaveStatus === 'saving' && (
+              <span className="flex items-center gap-1.5 text-amber-400 font-mono animate-pulse">
+                <RotateCw className="w-3 h-3 animate-spin" />
+                <span>Автосохранение черновика в localStorage...</span>
+              </span>
+            )}
+            {autoSaveStatus === 'saved' && (
+              <span className="flex items-center gap-1.5 text-emerald-400 font-mono">
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Черновик автоматически сохранён в localStorage ({lastSavedTime})</span>
+              </span>
+            )}
+            {autoSaveStatus === 'restored' && (
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 text-cyan-400 font-mono bg-cyan-950/70 px-2 py-0.5 rounded border border-cyan-700/50">
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Восстановлен несохраненный черновик ({lastSavedTime})</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleDiscardDraft}
+                  className="text-neutral-400 hover:text-rose-400 underline transition-colors cursor-pointer"
+                  title="Отменить изменения и вернуться к исходному тексту карточки"
+                >
+                  Сбросить до оригинала
+                </button>
+              </div>
+            )}
+            {autoSaveStatus === 'idle' && (
+              <span className="text-neutral-400 font-mono flex items-center gap-1.5 text-[10px]">
+                <Save className="w-3 h-3 text-neutral-500" />
+                <span>Защита от потери данных: изменения сохраняются в localStorage</span>
+              </span>
+            )}
+          </div>
+
+          {lastSavedTime && autoSaveStatus === 'saved' && (
+            <button
+              type="button"
+              onClick={handleDiscardDraft}
+              className="text-[10px] text-neutral-400 hover:text-rose-400 font-mono transition-colors"
+            >
+              Сбросить черновик
+            </button>
+          )}
         </div>
 
         <textarea

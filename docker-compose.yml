@@ -1,0 +1,106 @@
+version: '3.9'
+
+services:
+  # Mirovisor Portal & Gateway
+  portal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DATABASE_URL=postgresql://mirovisor:mirovisor_secret@postgres:5432/mirovisor_db
+      - NATS_URL=nats://nats:4222
+      - REDIS_URL=redis://redis:6379
+      - S3_ENDPOINT=http://minio:9000
+      - S3_BUCKET=mirovisor-storage
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      redis:
+        condition: service_started
+    networks:
+      - mirovisor-net
+
+  # PostgreSQL 16 with Schema-per-Tenant isolation & RLS
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mirovisor
+      POSTGRES_PASSWORD: mirovisor_secret
+      POSTGRES_DB: mirovisor_db
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U mirovisor -d mirovisor_db']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mirovisor-net
+
+  # NATS 2.10 with JetStream for telemetry and Cordis agent events
+  nats:
+    image: nats:2.10-alpine
+    command: ['-js', '-sd', '/data', '-m', '8222']
+    ports:
+      - '4222:4222'
+      - '8222:8222' # HTTP monitoring port
+    volumes:
+      - nats_data:/data
+    networks:
+      - mirovisor-net
+
+  # Redis 7 for Community Feed Fan-out & Session Store
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - mirovisor-net
+
+  # MinIO (S3-compatible storage emulator for Garage S3 multitenant buckets)
+  minio:
+    image: minio/minio:RELEASE.2024-03-30T09-41-56Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio_data:/data
+    networks:
+      - mirovisor-net
+
+  # Prometheus for Observability & Tenant Metrics
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    ports:
+      - '9090:9090'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - mirovisor-net
+
+volumes:
+  postgres_data:
+  nats_data:
+  redis_data:
+  minio_data:
+
+networks:
+  mirovisor-net:
+    driver: bridge
