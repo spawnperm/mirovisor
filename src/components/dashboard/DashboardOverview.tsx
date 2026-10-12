@@ -151,7 +151,7 @@ export const DashboardOverview: React.FC = () => {
     (f) => f.severity === 'CRITICAL' && f.status === 'open'
   ).length;
   const latestBuild = builds[0];
-  const totalDealValue = crmDeals.reduce((sum, d) => sum + (d.value || 0), 0);
+  const totalDealValue = crmDeals.reduce((sum, d) => sum + (d.amountRub || 0), 0);
   const activePluginsCount = plugins.filter((p) => p.status === 'active').length;
 
   return (
@@ -251,7 +251,7 @@ export const DashboardOverview: React.FC = () => {
             <span className="text-[11px] text-neutral-400 block font-mono">CI/CD Сборка</span>
             <div className="flex items-baseline gap-1.5">
               <span className="text-lg font-bold text-emerald-300 font-mono">
-                {latestBuild?.status === 'SUCCESS' ? 'Passed' : 'Pending'}
+                {latestBuild?.status === 'success' ? 'Passed' : 'Pending'}
               </span>
               <span className="text-[10px] text-neutral-400 font-mono">#{latestBuild?.id?.slice(0, 6)}</span>
             </div>
@@ -473,8 +473,8 @@ export const DashboardOverview: React.FC = () => {
             icon={<Activity className="w-4 h-4" />}
             badge="D3 Dual-Axis"
             stats={[
-              { label: 'Квота диска', value: `${activeTenant.storageQuotaGb} GB` },
-              { label: 'CPU Cores', value: activeTenant.cpuQuotaCores },
+              { label: 'Квота диска', value: `${(activeTenant.storageQuotaMb / 1024).toFixed(1)} GB` },
+              { label: 'Участники', value: activeTenant.memberCount },
             ]}
             statusText="D3 Trendline активна"
             statusType="success"
