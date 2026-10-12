@@ -15,7 +15,8 @@ import {
   Terminal,
   Mic,
   Lock,
-  Building
+  Building,
+  X
 } from 'lucide-react';
 import { Tenant, User } from '../../types';
 
@@ -58,6 +59,18 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenVoice,
 }) => {
   const [showTenantDropdown, setShowTenantDropdown] = useState<boolean>(false);
+  const [tenantSearchQuery, setTenantSearchQuery] = useState<string>('');
+
+  const filteredTenants = tenants.filter((t) => {
+    if (!tenantSearchQuery.trim()) return true;
+    const query = tenantSearchQuery.toLowerCase();
+    return (
+      t.name.toLowerCase().includes(query) ||
+      t.schema.toLowerCase().includes(query) ||
+      t.visibility.toLowerCase().includes(query) ||
+      (t.tags && t.tags.some((tag) => tag.toLowerCase().includes(query)))
+    );
+  });
 
   const tabs: { id: NavTabId; label: string; icon: React.ReactNode }[] = [
     { id: 'visualizer', label: 'Визуализатор', icon: <Network className="w-3.5 h-3.5" /> },
@@ -81,74 +94,129 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="flex items-center justify-between px-4 py-2.5 gap-4">
         {/* Brand / Title & Tenant Switcher */}
         <div className="flex items-center gap-3 shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-600 to-indigo-600 flex items-center justify-center font-bold text-white shadow-md shadow-cyan-900/30 font-mono text-sm">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-cyan-600 to-indigo-600 flex items-center justify-center font-bold text-white shadow-md shadow-cyan-900/30 font-mono text-sm shrink-0">
             М
           </div>
-          <div>
-            <h1 className="text-sm font-extrabold tracking-wider text-white flex items-center gap-2">
-              МИРОВИЗОР
+          <div className="flex flex-col justify-center">
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm font-extrabold tracking-wider text-white">
+                МИРОВИЗОР
+              </h1>
               <span className="text-[10px] font-mono px-1.5 py-0.2 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded font-semibold">
                 v1.0 ENTERPRISE
               </span>
-            </h1>
+            </div>
 
-            {/* Tenant Switcher in place of subtitle */}
+            {/* Tenant Switcher immediately below the portal title */}
             <div className="relative mt-0.5">
               <button
-                onClick={() => setShowTenantDropdown(!showTenantDropdown)}
-                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-neutral-900 hover:bg-neutral-850 border border-neutral-800 hover:border-cyan-500/40 text-[11px] font-mono text-cyan-400 transition-colors group text-left shadow-sm"
+                type="button"
+                onClick={() => {
+                  setShowTenantDropdown(!showTenantDropdown);
+                  if (!showTenantDropdown) setTenantSearchQuery('');
+                }}
+                className="group flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-neutral-900/90 hover:bg-neutral-850 border border-neutral-800 hover:border-cyan-500/50 text-[11px] font-mono transition-all text-left shadow-xs"
                 title="Сменить рабочий тенант"
               >
                 <Building className="w-3 h-3 text-cyan-400 group-hover:text-cyan-300 shrink-0" />
-                <span className="font-semibold text-neutral-200 group-hover:text-white leading-tight">
+                <span className="font-semibold text-neutral-200 group-hover:text-white truncate max-w-[150px]">
                   {activeTenant.name}
                 </span>
                 <span className="text-[10px] text-neutral-500 font-mono">
                   ({activeTenant.schema})
                 </span>
-                <ChevronDown className={`w-3 h-3 text-neutral-400 transition-transform ${showTenantDropdown ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`w-3 h-3 text-neutral-400 transition-transform duration-200 ml-0.5 group-hover:text-cyan-400 ${showTenantDropdown ? 'rotate-180 text-cyan-400' : ''}`} />
               </button>
 
               {showTenantDropdown && (
                 <>
                   <div
-                    className="fixed inset-0 z-40 bg-black/20"
-                    onClick={() => setShowTenantDropdown(false)}
+                    className="fixed inset-0 z-40 bg-black/30 backdrop-blur-xs"
+                    onClick={() => {
+                      setShowTenantDropdown(false);
+                      setTenantSearchQuery('');
+                    }}
                   />
-                  <div className="absolute left-0 mt-1.5 w-72 bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl p-1.5 z-50 text-xs">
-                    <div className="text-[10px] font-mono uppercase text-neutral-400 px-2 py-1 flex items-center justify-between border-b border-neutral-800/80 mb-1">
-                      <span>Выберите тенант:</span>
-                      <span className="text-cyan-400 font-semibold">Schema-per-Tenant</span>
+                  <div className="absolute left-0 mt-1.5 w-80 bg-neutral-900/95 backdrop-blur-md border border-neutral-800 rounded-xl shadow-2xl p-2 z-50 text-xs flex flex-col">
+                    <div className="text-[10px] font-mono uppercase text-neutral-400 px-2 py-1 flex items-center justify-between border-b border-neutral-800/80 mb-2">
+                      <span className="flex items-center gap-1.5 font-semibold text-neutral-300">
+                        <Building className="w-3 h-3 text-cyan-400" />
+                        Рабочий тенант
+                      </span>
+                      <span className="text-cyan-400 font-mono font-medium">
+                        {tenants.length} тенантов
+                      </span>
                     </div>
-                    {tenants.map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => {
-                          onSelectTenant(t);
-                          setShowTenantDropdown(false);
-                        }}
-                        className={`w-full text-left p-2 rounded-lg flex items-center justify-between transition-colors ${
-                          t.id === activeTenant.id
-                            ? 'bg-neutral-800 text-white font-semibold'
-                            : 'text-neutral-300 hover:bg-neutral-850'
-                        }`}
-                      >
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span>{t.name}</span>
-                            {t.id === activeTenant.id && (
-                              <span className="text-[9px] px-1 py-0.2 bg-cyan-500/20 text-cyan-300 rounded font-mono">АКТИВЕН</span>
-                            )}
-                          </div>
-                          <div className="text-[10px] text-neutral-500 font-mono">
-                            {t.schema} · {t.visibility}
-                          </div>
+
+                    {/* Search bar inside dropdown when list exceeds 5 entries */}
+                    {(tenants.length > 5 || tenantSearchQuery.length > 0) && (
+                      <div className="relative mb-2 px-0.5">
+                        <div className="relative flex items-center">
+                          <Search className="w-3.5 h-3.5 text-neutral-500 absolute left-2.5 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={tenantSearchQuery}
+                            onChange={(e) => setTenantSearchQuery(e.target.value)}
+                            placeholder="Поиск по названию или схеме..."
+                            className="w-full bg-neutral-950/90 border border-neutral-800 focus:border-cyan-500/70 rounded-lg pl-8 pr-7 py-1.5 text-xs text-neutral-200 placeholder:text-neutral-500 outline-none transition-colors font-sans"
+                            autoFocus
+                          />
+                          {tenantSearchQuery && (
+                            <button
+                              type="button"
+                              onClick={() => setTenantSearchQuery('')}
+                              className="absolute right-2 p-0.5 text-neutral-500 hover:text-neutral-300 rounded"
+                              title="Очистить поиск"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
                         </div>
-                        {t.id === activeTenant.id && (
-                          <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400" />
-                        )}
-                      </button>
-                    ))}
+                      </div>
+                    )}
+
+                    {/* Tenants list */}
+                    <div className="max-h-60 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                      {filteredTenants.length === 0 ? (
+                        <div className="py-6 text-center text-neutral-500 text-xs font-mono">
+                          Тенанты не найдены по запросу «{tenantSearchQuery}»
+                        </div>
+                      ) : (
+                        filteredTenants.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => {
+                              onSelectTenant(t);
+                              setShowTenantDropdown(false);
+                              setTenantSearchQuery('');
+                            }}
+                            className={`w-full text-left p-2 rounded-lg flex items-center justify-between transition-colors ${
+                              t.id === activeTenant.id
+                                ? 'bg-cyan-950/40 border border-cyan-800/60 text-white font-semibold'
+                                : 'text-neutral-300 hover:bg-neutral-800/80 border border-transparent'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1 mr-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="truncate">{t.name}</span>
+                                {t.id === activeTenant.id && (
+                                  <span className="text-[9px] px-1.5 py-0.2 bg-cyan-500/20 text-cyan-300 rounded font-mono font-medium">
+                                    АКТИВЕН
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-neutral-500 font-mono truncate">
+                                {t.schema} · {t.visibility} · {t.memberCount} участников
+                              </div>
+                            </div>
+                            {t.id === activeTenant.id && (
+                              <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400 shrink-0" />
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
                   </div>
                 </>
               )}
