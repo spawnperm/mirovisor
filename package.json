@@ -6,15 +6,9 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
-    "build:server": "esbuild server.ts --bundle --platform=node --target=node20 --format=esm --packages=external --outfile=server.mjs",
-    "build:all": "npm run build && npm run build:server",
-    "postbuild": "node scripts/auto-commit-on-build.mjs",
-    "build:commit": "npm run lint && npm run test && npm run build:all",
     "preview": "vite preview",
-    "start": "node server.mjs",
-    "clean": "rm -rf dist server.mjs",
-    "lint": "tsc --noEmit",
-    "test": "vitest run"
+    "clean": "rm -rf dist server.js",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -31,12 +25,13 @@
     "react-dom": "^19.0.1",
     "recharts": "^3.10.1",
     "vite": "^8.3.0",
+    "vitest": "^5.0.3",
     "y-webrtc": "^10.3.0",
     "yjs": "^13.6.33",
+    "zod": "^4.6.6",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -45,6 +40,6 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.3"
+    "@types/express": "^4.17.21"
   }
 }

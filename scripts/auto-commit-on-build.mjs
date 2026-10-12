@@ -54,8 +54,20 @@ function autoCommitAndPushInDir(dirPath) {
   const hasSecurity = statusLines.some((l) => l.includes('security') || l.includes('SECURITY'));
   const hasDevOps = statusLines.some((l) => l.includes('docker') || l.includes('workflow') || l.includes('prometheus') || l.includes('alert'));
   const hasServer = statusLines.some((l) => l.includes('server.ts') || l.includes('init-db'));
+  const hasK8s = statusLines.some((l) => l.includes('k8s') || l.includes('nginx'));
+  const hasContracts = statusLines.some((l) => l.includes('schemas') || l.includes('openapi'));
+  const hasDocs = statusLines.some((l) => l.includes('docs') || l.includes('adr') || l.includes('c4-model'));
 
-  if (hasRules) {
+  if (hasK8s) {
+    scope = 'infra';
+    message = 'add Kubernetes manifests, Nginx reverse proxy, and Zod API contracts';
+  } else if (hasContracts) {
+    scope = 'contracts';
+    message = 'add Zod runtime schemas and OpenAPI 3.1 contracts';
+  } else if (hasDocs) {
+    scope = 'docs';
+    message = 'add ADR-002..004, C4 model and full engineering audit report';
+  } else if (hasRules) {
     scope = 'rules';
     message = 'document mandatory auto-commit and push to GitHub on successful build';
   } else if (hasDevOps) {
